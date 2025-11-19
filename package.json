@@ -1,62 +1,64 @@
 {
-	"name": "vscode-scitt-preview",
-	"icon": "docs/product-logo.png",
-	"displayName": "SCITT Preview",
-	"description": "CBOR Extended Diagnostic Notation (EDN) for SCITT",
-	"version": "0.0.1",
-	"publisher": "Transmute",
-	"private": true,
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "https://github.com/transmute-industries/vscode-scitt-preview"
-	},
-	"engines": {
-		"vscode": "^1.74.0"
-	},
-	"categories": [
-		"Other"
-	],
-	"activationEvents": [],
-	"main": "./out/extension.js",
-	"contributes": {
-		"customEditors": [
-			{
-				"viewType": "scittPreview.cbor",
-				"displayName": "CBOR",
-				"selector": [
-					{
-						"filenamePattern": "*.cbor"
-					}
-				]
-			}
-		],
-		"commands": [
-			{
-				"command": "scittPreview.Cbor.new",
-				"title": "Create new CBOR Document",
-				"category": "CBOR"
-			}
-		]
-	},
-	"scripts": {
-		"vscode:prepublish": "npm run compile",
-		"compile": "tsc -p ./",
-		"lint": "eslint \"src/**/*.ts\"",
-		"watch": "tsc -w -p ./",
-		"build:vsix": "vsce package"
-	},
-	"devDependencies": {
-		"@types/node": "^16.18.34",
-		"@types/vscode": "^1.73.0",
-		"@typescript-eslint/eslint-plugin": "^6.7.0",
-		"@typescript-eslint/parser": "^6.7.0",
-		"@vscode/vsce": "^2.22.0",
-		"eslint": "^8.26.0",
-		"typescript": "^5.3.2"
-	},
-	"dependencies": {
-		"@transmute/edn": "^0.0.5",
-		"cbor": "^9.0.2"
-	}
+  "name": "vscode-scitt-preview",
+  "icon": "docs/product-logo.png",
+  "displayName": "SCITT Preview",
+  "description": "CBOR Extended Diagnostic Notation (EDN) for SCITT",
+  "version": "0.0.1",
+  "publisher": "Transmute",
+  "private": true,
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/transmute-industries/vscode-scitt-preview"
+  },
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "cbor-tools.cbor",
+        "displayName": "CBOR",
+        "selector": [
+          {
+            "filenamePattern": "*.cbor"
+          }
+        ]
+      }
+    ],
+    "commands": [
+      {
+        "command": "scittPreview.Cbor.new",
+        "title": "Create new CBOR Document",
+        "category": "CBOR"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "lint": "eslint \"src/**/*.ts\"",
+    "watch": "tsc -w -p ./",
+    "build:vsix": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^16.18.34",
+    "@types/vscode": "^1.73.0",
+    "@typescript-eslint/eslint-plugin": "^6.7.0",
+    "@typescript-eslint/parser": "^6.7.0",
+    "@vscode/vsce": "^2.22.0",
+    "eslint": "^8.26.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.3.2"
+  },
+  "dependencies": {
+    "@transmute/edn": "^0.0.5",
+    "cbor": "^9.0.2",
+    "edn-data": "^1.1.2"
+  }
 }
