@@ -2,7 +2,6 @@
 import * as vscode from "vscode";
 import { Disposable, disposeAll } from "./dispose";
 import { getNonce } from "./util";
-import { parseEDNString, toEDNStringFromSimpleObject } from "edn-data";
 import * as cbor from "cbor";
 
 import * as edn from "@transmute/edn";
@@ -276,15 +275,10 @@ export class CborEditorProvider
       openContext.backupId,
       {
         getFileData: async () => {
-          console.log("getFileData: called for", uri.toString());
           const webviewsForDocument = Array.from(
             this.webviews.get(document.uri),
           );
           if (!webviewsForDocument.length) {
-            console.error(
-              "getFileData: no webview found for",
-              document.uri.toString(),
-            );
             throw new Error("Could not find webview to save for");
           }
           const panel = webviewsForDocument[0];
@@ -293,42 +287,37 @@ export class CborEditorProvider
             "getEdnText",
             {},
           );
-          console.log("getFileData: got EDN from webview:", ednText);
 
           try {
-            const value = parseEDNString(ednText, {
-              mapAs: "object",
-              keywordAs: "string",
-            });
-            console.log("getFileData: EDN parsed OK, encoding CBOR");
+            let value;
+            try {
+              value = JSON.parse(ednText);
+            } catch (jsonErr) {
+              throw new Error(
+                "Derzeit wird nur JSON-kompatibles CBOR unterstützt. Erweiterte Syntax (h'..', Tags) benötigt einen Custom Parser.",
+              );
+            }
+
             const cborBytes = cbor.encode(value);
             return new Uint8Array(cborBytes);
           } catch (e: any) {
-            console.error("getFileData: EDN parse failed:", e);
             vscode.window.showErrorMessage(
-              "EDN-Fehler beim Speichern: " + (e.message ?? String(e)),
+              "Fehler beim Speichern: " + (e.message ?? String(e)),
             );
-            return document.documentData; // nichts zerstören
+            return document.documentData;
           }
         },
       },
     );
 
     const listeners: vscode.Disposable[] = [];
-
     listeners.push(
       document.onDidChange((e) => {
-        // Tell VS Code that the document has been edited by the use.
-        this._onDidChangeCustomDocument.fire({
-          document,
-          ...e,
-        });
+        this._onDidChangeCustomDocument.fire({ document, ...e });
       }),
     );
-
     listeners.push(
       document.onDidChangeContent((e) => {
-        // Update all webviews when the document changes
         for (const webviewPanel of this.webviews.get(document.uri)) {
           this.postMessage(webviewPanel, "update", {
             edits: e.edits,
@@ -337,9 +326,7 @@ export class CborEditorProvider
         }
       }),
     );
-
     document.onDidDispose(() => disposeAll(listeners));
-
     return document;
   }
 
@@ -348,32 +335,13 @@ export class CborEditorProvider
     webviewPanel: vscode.WebviewPanel,
     _token: vscode.CancellationToken,
   ): Promise<void> {
-    // Add the webview to our internal set of active webviews
     this.webviews.add(document.uri, webviewPanel);
-
-    // Setup initial content for the webview
-    webviewPanel.webview.options = {
-      enableScripts: true,
-    };
+    webviewPanel.webview.options = { enableScripts: true };
     webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
 
-    console.log(
-      "CborEditorProvider: resolveCustomEditor for",
-      document.uri.toString(),
-    );
-
-    // Wait for the webview to be properly ready before we init
     webviewPanel.webview.onDidReceiveMessage((e) => {
-      console.log("CborEditorProvider: message from webview", e);
       if (e.type === "ready") {
-        console.log(
-          'CborEditorProvider: got "ready" from webview for',
-          document.uri.toString(),
-        );
         if (document.uri.scheme === "untitled") {
-          console.log(
-            "CborEditorProvider: untitled document, sending empty init",
-          );
           this.postMessage(webviewPanel, "init", {
             untitled: true,
             editable: true,
@@ -382,59 +350,29 @@ export class CborEditorProvider
           const editable = vscode.workspace.fs.isWritableFileSystem(
             document.uri.scheme,
           );
-          (async () => {
-            try {
-              console.log(
-                "CborEditorProvider: trying edn.render on documentData",
-              );
-              const text = await edn.render(
-                Buffer.from(document.documentData),
-                "application/cbor-diagnostic",
-              );
+
+          cbor
+            .diagnose(document.documentData)
+            .then((text) => {
+              const formattedText = this.prettyPrintEDN(text);
               this.postMessage(webviewPanel, "init", {
-                value: text,
+                value: formattedText,
                 editable,
               });
-            } catch (e) {
-              console.warn(
-                "CborEditorProvider: edn.render failed, treating as generic CBOR:",
-                e,
-              );
-
-              try {
-                console.log(
-                  "CborEditorProvider: decoding CBOR for generic EDN view",
-                );
-                const decoded = await cbor.decodeFirst(document.documentData);
-                console.log("CborEditorProvider: decoded value", decoded);
-
-                const ednText = toEDNStringFromSimpleObject(decoded as any);
-
-                this.postMessage(webviewPanel, "init", {
-                  value: ednText,
-                  editable, // fürs Erste ruhig editierbar lassen
-                });
-              } catch (e2) {
-                console.error(
-                  "CborEditorProvider: generic CBOR→EDN failed, falling back to diagnose",
-                  e2,
-                );
-                const diag = await cbor.diagnose(document.documentData);
-                this.postMessage(webviewPanel, "init", {
-                  value: diag,
-                  editable: false, // Diagnose nur read-only
-                });
-              }
-            }
-          })();
+            })
+            .catch((err) => {
+              console.error("Diagnose failed", err);
+              this.postMessage(webviewPanel, "init", {
+                value: "Fehler beim Lesen der CBOR Datei: " + err.message,
+                editable: false,
+              });
+            });
         }
       } else {
-        // <<< HIER: alle anderen Messages (contentChange, response, …)
         this.onMessage(document, e);
       }
     });
   }
-
   private readonly _onDidChangeCustomDocument = new vscode.EventEmitter<
     vscode.CustomDocumentEditEvent<CborDocument>
   >();
@@ -473,23 +411,74 @@ export class CborEditorProvider
 
   private updateDiagnostics(uri: vscode.Uri, text: string): void {
     const diagnostics: vscode.Diagnostic[] = [];
+    if (!text || text.trim().length === 0) {
+      this.diagnostics.set(uri, diagnostics);
+      return;
+    }
 
-    if (text.includes("ERROR")) {
+    try {
+      JSON.parse(text);
+    } catch (e: any) {
+      const msg = e?.message ?? "Syntax Fehler";
+
       const range = new vscode.Range(
         new vscode.Position(0, 0),
-        new vscode.Position(0, 5),
+        new vscode.Position(0, 10),
       );
 
       diagnostics.push(
         new vscode.Diagnostic(
           range,
-          'Test-Fehler: Text enthält "ERROR"',
+          "Syntax Error (Parser limitation: Only standard JSON syntax supported currently): " +
+            msg,
           vscode.DiagnosticSeverity.Error,
         ),
       );
     }
-
     this.diagnostics.set(uri, diagnostics);
+  }
+
+  private prettyPrintEDN(text: string): string {
+    let output = "";
+    let indentLevel = 0;
+    const indent = "  ";
+    let inString = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+
+      if (char === '"' && text[i - 1] !== "\\") {
+        inString = !inString;
+      }
+
+      if (inString) {
+        output += char;
+        continue;
+      }
+
+      switch (char) {
+        case "{":
+        case "[":
+          output += char + "\n" + indent.repeat(++indentLevel);
+          break;
+        case "}":
+        case "]":
+          output += "\n" + indent.repeat(--indentLevel) + char;
+          break;
+        case ",":
+          output += char + "\n" + indent.repeat(indentLevel);
+
+          if (text[i + 1] === " ") i++;
+          break;
+        case ":":
+          output += ": ";
+          break;
+        default:
+          output += char;
+          break;
+      }
+    }
+    return output.trim();
   }
   //#endregion
 
@@ -497,53 +486,43 @@ export class CborEditorProvider
    * Get the static HTML used for in our editor's webviews.
    */
   private getHtmlForWebview(webview: vscode.Webview): string {
-    // Local path to script and css for the webview
     const scriptUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._context.extensionUri, "media", "Cbor.js"),
     );
-
-    const styleResetUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._context.extensionUri, "media", "reset.css"),
-    );
-
-    const styleVSCodeUri = webview.asWebviewUri(
-      vscode.Uri.joinPath(this._context.extensionUri, "media", "vscode.css"),
-    );
-
     const styleMainUri = webview.asWebviewUri(
       vscode.Uri.joinPath(this._context.extensionUri, "media", "Cbor.css"),
     );
-
-    // Use a nonce to whitelist which scripts can be run
     const nonce = getNonce();
 
     return /* html */ `
-			<!DOCTYPE html>
-			<html lang="en">
-			<head>
-				<meta charset="UTF-8">
-
-				<!--
-				Use a content security policy to only allow loading images from https or from our extension directory,
-				and only allow scripts that have a specific nonce.
-				-->
-				<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src ${webview.cspSource} blob:; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-
-				<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-				<link href="${styleResetUri}" rel="stylesheet" />
-				<link href="${styleVSCodeUri}" rel="stylesheet" />
-				<link href="${styleMainUri}" rel="stylesheet" />
-
-				<title>Paw Draw</title>
-			</head>
-			<body>
-				<textarea class="edn-preview"></textarea>
-				<script nonce="${nonce}" src="${scriptUri}"></script>
-			</body>
-			</html>`;
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta http-equiv="Content-Security-Policy" content="
+                default-src 'none'; 
+                img-src ${webview.cspSource} blob:; 
+                style-src ${webview.cspSource} 'unsafe-inline' https://unpkg.com; 
+                script-src 'nonce-${nonce}' 'unsafe-eval' https://unpkg.com;
+                font-src https://unpkg.com;">
+            
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <link href="${styleMainUri}" rel="stylesheet" />
+            <title>CBOR EDN Editor</title>
+            <style>
+                html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+                #container { width: 100%; height: 100%; }
+            </style>
+        </head>
+        <body>
+            <div id="container"></div>
+            
+            <script nonce="${nonce}" src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
+            
+            <script nonce="${nonce}" src="${scriptUri}"></script>
+        </body>
+        </html>`;
   }
-
   private _requestId = 1;
   private readonly _callbacks = new Map<number, (response: any) => void>();
 
