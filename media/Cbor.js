@@ -20,11 +20,11 @@
           // Tags: Zahl gefolgt von Klammer auf, z.B. 32(
           [/(\d+)(\()/, ["keyword.tag", "delimiter.parenthesis"]],
 
-          // Strings (doppelte Anführungszeichen)
+          // Strings
           [/"([^"\\]|\\.)*$/, "string.invalid"], // nicht geschlossener String
           [/"([^"\\]|\\.)*"/, "string"],
 
-          // Zahlen (Integers, Floats, und Floats mit Größe wie 4.5_2)
+          // Zahlen
           [/-?\d+(\.\d+)?(_\d+)?/, "number"],
 
           // Keywords / Booleans
@@ -36,7 +36,7 @@
           [/[,]/, "delimiter.comma"],
           [/[:]/, "delimiter.colon"],
 
-          // Kommentare (CBOR Diagnostic nutzt oft // oder /.../)
+          // Kommentare
           [/\/\/.*$/, "comment"],
         ],
       },

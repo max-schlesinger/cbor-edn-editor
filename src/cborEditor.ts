@@ -3,6 +3,7 @@ import * as vscode from "vscode";
 import { Disposable, disposeAll } from "./dispose";
 import { getNonce } from "./util";
 import * as cbor from "cbor";
+import { CborParser } from "./CborParser";
 
 import * as edn from "@transmute/edn";
 
@@ -287,23 +288,15 @@ export class CborEditorProvider
             "getEdnText",
             {},
           );
-
           try {
-            let value;
-            try {
-              value = JSON.parse(ednText);
-            } catch (jsonErr) {
-              throw new Error(
-                "Derzeit wird nur JSON-kompatibles CBOR unterstützt. Erweiterte Syntax (h'..', Tags) benötigt einen Custom Parser.",
-              );
-            }
-
+            const value = CborParser.parse(ednText);
+            console.log("Error ", value);
+            console.log("getFileData: Parsed OK, encoding...");
             const cborBytes = cbor.encode(value);
             return new Uint8Array(cborBytes);
           } catch (e: any) {
-            vscode.window.showErrorMessage(
-              "Fehler beim Speichern: " + (e.message ?? String(e)),
-            );
+            console.error(e);
+            vscode.window.showErrorMessage("Syntax-Fehler: " + e.message);
             return document.documentData;
           }
         },
@@ -411,30 +404,32 @@ export class CborEditorProvider
 
   private updateDiagnostics(uri: vscode.Uri, text: string): void {
     const diagnostics: vscode.Diagnostic[] = [];
+
     if (!text || text.trim().length === 0) {
       this.diagnostics.set(uri, diagnostics);
       return;
     }
-
     try {
-      JSON.parse(text);
-    } catch (e: any) {
-      const msg = e?.message ?? "Syntax Fehler";
+      const value = CborParser.parse(text);
 
+      cbor.encode(value);
+    } catch (e: any) {
+      const line = typeof e.line === "number" ? e.line : 0;
+      const col = typeof e.column === "number" ? e.column : 0;
       const range = new vscode.Range(
-        new vscode.Position(0, 0),
-        new vscode.Position(0, 10),
+        new vscode.Position(line, col),
+        new vscode.Position(line, col + 1),
       );
 
       diagnostics.push(
         new vscode.Diagnostic(
           range,
-          "Syntax Error (Parser limitation: Only standard JSON syntax supported currently): " +
-            msg,
+          e.message,
           vscode.DiagnosticSeverity.Error,
         ),
       );
     }
+
     this.diagnostics.set(uri, diagnostics);
   }
 
