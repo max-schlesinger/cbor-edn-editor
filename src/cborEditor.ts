@@ -404,14 +404,17 @@ export class CborEditorProvider
 
   private updateDiagnostics(uri: vscode.Uri, text: string): void {
     const diagnostics: vscode.Diagnostic[] = [];
+    const redMarkers: any[] = [];
 
     if (!text || text.trim().length === 0) {
       this.diagnostics.set(uri, diagnostics);
+      for (const panel of this.webviews.get(uri)) {
+        this.postMessage(panel, "syntaxError", { markers: [] });
+      }
       return;
     }
     try {
       const value = CborParser.parse(text);
-
       cbor.encode(value);
     } catch (e: any) {
       const line = typeof e.line === "number" ? e.line : 0;
@@ -420,7 +423,6 @@ export class CborEditorProvider
         new vscode.Position(line, col),
         new vscode.Position(line, col + 1),
       );
-
       diagnostics.push(
         new vscode.Diagnostic(
           range,
@@ -428,9 +430,23 @@ export class CborEditorProvider
           vscode.DiagnosticSeverity.Error,
         ),
       );
-    }
 
+      redMarkers.push({
+        startLineNumber: line + 1,
+        startColumn: col + 1,
+        endLineNumber: line + 1,
+        endColumn: col + 2,
+        message: e.message,
+        severity: 3,
+      });
+    }
+    const panels = Array.from(this.webviews.get(uri));
     this.diagnostics.set(uri, diagnostics);
+    console.log(`LOG B: Sende Fehler an ${panels.length} Webviews.`);
+
+    for (const panel of this.webviews.get(uri)) {
+      this.postMessage(panel, "syntaxError", { markers: redMarkers });
+    }
   }
 
   private prettyPrintEDN(text: string): string {
@@ -496,10 +512,11 @@ export class CborEditorProvider
             <meta charset="UTF-8">
             <meta http-equiv="Content-Security-Policy" content="
                 default-src 'none'; 
-                img-src ${webview.cspSource} blob:; 
+                img-src ${webview.cspSource} blob: data:; 
                 style-src ${webview.cspSource} 'unsafe-inline' https://unpkg.com; 
-                script-src 'nonce-${nonce}' 'unsafe-eval' https://unpkg.com;
-                font-src https://unpkg.com;">
+                script-src 'nonce-${nonce}' 'unsafe-eval' https://unpkg.com blob:;
+                worker-src blob:;
+                font-src https://unpkg.com data:;">
             
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <link href="${styleMainUri}" rel="stylesheet" />

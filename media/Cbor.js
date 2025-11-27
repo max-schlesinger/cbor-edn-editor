@@ -77,7 +77,7 @@
 
     window.addEventListener("message", (event) => {
       const message = event.data;
-
+      console.log("LOG C: Nachricht im Frontend:", message.type);
       switch (message.type) {
         case "init":
           isEditable = false;
@@ -100,6 +100,30 @@
             requestId: message.requestId,
             body: editor.getValue(),
           });
+          break;
+
+        case "syntaxError":
+          console.log("Nachricht empfangen:", message);
+          const rawMarkers = message.body.markers || [];
+
+          // Wir müssen die Marker für Monaco anpassen
+          const markers = rawMarkers.map((m) => {
+            return {
+              startLineNumber: m.startLineNumber,
+              startColumn: m.startColumn,
+              endLineNumber: m.endLineNumber,
+              endColumn: m.endColumn,
+              message: m.message,
+              // WICHTIG: Erzwinge hier "Error" (Rot), egal was vom Backend kommt
+              severity: monaco.MarkerSeverity.Error,
+            };
+          });
+
+          monaco.editor.setModelMarkers(
+            editor.getModel(), // <--- KORREKTUR: Das [0] muss weg!
+            "cbor-errors",
+            markers,
+          );
           break;
       }
     });

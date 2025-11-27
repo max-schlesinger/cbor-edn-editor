@@ -79,7 +79,7 @@ export class CborParser {
   }
 
   private parseMap(): any {
-    this.consume();
+    this.consume(); // {
     const result: any = {};
     this.skipWhiteSpace();
 
@@ -91,17 +91,30 @@ export class CborParser {
     while (true) {
       const key = this.parseValue();
       this.skipWhiteSpace();
-      if (this.consume() !== ":") throw this.error("Error3");
+      if (this.consume() !== ":")
+        throw this.error("Error3 (Doppelpunkt erwartet)");
       const value = this.parseValue();
 
       result[key] = value;
 
+      const errorLine = this.line;
+      const errorCol = this.column;
+
       this.skipWhiteSpace();
+
       if (this.peek() === "}") {
         this.consume();
         break;
       }
-      if (this.consume() !== ",") throw this.error("Error4");
+
+      if (this.peek() !== ",") {
+        const e: any = new Error("Error4 (Komma erwartet)");
+        e.line = errorLine;
+        e.column = errorCol;
+        throw e;
+      }
+
+      this.consume();
     }
     return result;
   }
@@ -118,12 +131,26 @@ export class CborParser {
 
     while (true) {
       result.push(this.parseValue());
+
+      const errorLine = this.line;
+      const errorCol = this.column;
+
       this.skipWhiteSpace();
+
       if (this.peek() === "]") {
         this.consume();
         break;
       }
-      if (this.consume() !== ",") throw this.error("Error5");
+
+      if (this.peek() !== ",") {
+        const e: any = new Error("Error5 (Komma erwartet)");
+
+        e.line = errorLine;
+        e.column = errorCol;
+        throw e;
+      }
+
+      this.consume();
     }
     return result;
   }
