@@ -3,9 +3,7 @@ import * as vscode from "vscode";
 import { Disposable, disposeAll } from "./dispose";
 import { getNonce } from "./util";
 import * as cbor from "cbor";
-import { CborParser } from "./CborParser";
-
-import * as edn from "@transmute/edn";
+import { parseCborEdn, CborVisitor } from "./CborParser";
 
 /**
  * Define the type of edits used in paw draw files.
@@ -190,9 +188,7 @@ class CborDocument extends Disposable implements vscode.CustomDocument {
       delete: async () => {
         try {
           await vscode.workspace.fs.delete(destination);
-        } catch {
-          // noop
-        }
+        } catch {}
       },
     };
   }
@@ -288,15 +284,28 @@ export class CborEditorProvider
             "getEdnText",
             {},
           );
+
+          const result = parseCborEdn(ednText);
+
+          if (result.lexErrors.length > 0 || result.parseErrors.length > 0) {
+            const msg = "Kann nicht speichern: Syntaxfehler im Dokument.";
+            vscode.window.showErrorMessage(msg);
+            throw new Error(msg);
+          }
+
           try {
-            const value = CborParser.parse(ednText);
-            console.log("Error ", value);
-            console.log("getFileData: Parsed OK, encoding...");
+            console.log("Parsen erfolgreich, konvertiere zu CBOR...");
+
+            const visitor = new CborVisitor();
+            const value = visitor.visit(result.cst);
+
             const cborBytes = cbor.encode(value);
             return new Uint8Array(cborBytes);
           } catch (e: any) {
             console.error(e);
-            vscode.window.showErrorMessage("Syntax-Fehler: " + e.message);
+            vscode.window.showErrorMessage(
+              "Fehler beim Kodieren: " + e.message,
+            );
             return document.documentData;
           }
         },
@@ -347,7 +356,10 @@ export class CborEditorProvider
           cbor
             .diagnose(document.documentData)
             .then((text) => {
-              const formattedText = this.prettyPrintEDN(text);
+              let formattedText = this.prettyPrintEDN(text);
+              formattedText = formattedText.replace(/(\d+\.\d+)_3\b/g, "$1");
+              formattedText = formattedText.replace(/\b(\d+)_3\b/g, "$1.0");
+
               this.postMessage(webviewPanel, "init", {
                 value: formattedText,
                 editable,
@@ -413,36 +425,72 @@ export class CborEditorProvider
       }
       return;
     }
-    try {
-      const value = CborParser.parse(text);
-      cbor.encode(value);
-    } catch (e: any) {
-      const line = typeof e.line === "number" ? e.line : 0;
-      const col = typeof e.column === "number" ? e.column : 0;
+
+    const result = parseCborEdn(text);
+
+    result.lexErrors.forEach((err) => {
       const range = new vscode.Range(
-        new vscode.Position(line, col),
-        new vscode.Position(line, col + 1),
+        err.line - 1,
+        err.column - 1,
+        err.line - 1,
+        err.column + err.length - 1,
       );
       diagnostics.push(
         new vscode.Diagnostic(
           range,
-          e.message,
+          err.message,
           vscode.DiagnosticSeverity.Error,
         ),
       );
 
       redMarkers.push({
-        startLineNumber: line + 1,
-        startColumn: col + 1,
-        endLineNumber: line + 1,
-        endColumn: col + 2,
-        message: e.message,
+        startLineNumber: err.line,
+        startColumn: err.column,
+        endLineNumber: err.line,
+        endColumn: err.column + err.length,
+        message: err.message,
         severity: 3,
       });
-    }
-    const panels = Array.from(this.webviews.get(uri));
+    });
+
+    result.parseErrors.forEach((err) => {
+      const token = err.token;
+      const startLine = token.startLine || 1;
+      const startCol = token.startColumn || 1;
+      const endLine = token.endLine || startLine;
+      const endCol = token.endColumn || startCol + 1;
+
+      const range = new vscode.Range(
+        startLine - 1,
+        startCol - 1,
+        endLine - 1,
+        endCol,
+      );
+
+      diagnostics.push(
+        new vscode.Diagnostic(
+          range,
+          err.message,
+          vscode.DiagnosticSeverity.Error,
+        ),
+      );
+
+      redMarkers.push({
+        startLineNumber: startLine,
+        startColumn: startCol,
+        endLineNumber: endLine,
+        endColumn: endCol,
+        message: err.message,
+        severity: 3,
+      });
+    });
+
     this.diagnostics.set(uri, diagnostics);
-    console.log(`LOG B: Sende Fehler an ${panels.length} Webviews.`);
+
+    const panels = Array.from(this.webviews.get(uri));
+    if (redMarkers.length > 0) {
+      console.log(`Sende ${redMarkers.length} Fehler an Webviews.`);
+    }
 
     for (const panel of this.webviews.get(uri)) {
       this.postMessage(panel, "syntaxError", { markers: redMarkers });
