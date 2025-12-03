@@ -355,7 +355,7 @@ export class CborEditorProvider
 
           cbor
             .diagnose(document.documentData)
-            .then((text) => {
+            .then(async (text) => {
               let formattedText = this.prettyPrintEDN(text);
               formattedText = formattedText.replace(/(\d+\.\d+)_3\b/g, "$1");
               formattedText = formattedText.replace(/\b(\d+)_3\b/g, "$1.0");
@@ -364,6 +364,17 @@ export class CborEditorProvider
                 value: formattedText,
                 editable,
               });
+
+              try {
+                const hexString = await cbor.Commented.comment(
+                  document.documentData,
+                );
+                this.postMessage(webviewPanel, "updateHex", {
+                  text: hexString,
+                });
+              } catch (err) {
+                console.error("Konnte Hex-View beim Start nicht laden:", err);
+              }
             })
             .catch((err) => {
               console.error("Diagnose failed", err);
@@ -414,7 +425,10 @@ export class CborEditorProvider
     return document.backup(context.destination, cancellation);
   }
 
-  private updateDiagnostics(uri: vscode.Uri, text: string): void {
+  private async updateDiagnostics(
+    uri: vscode.Uri,
+    text: string,
+  ): Promise<void> {
     const diagnostics: vscode.Diagnostic[] = [];
     const redMarkers: any[] = [];
 
@@ -484,6 +498,22 @@ export class CborEditorProvider
         severity: 3,
       });
     });
+
+    if (result.lexErrors.length === 0 && result.parseErrors.length === 0) {
+      try {
+        const visitor = new CborVisitor();
+        const value = visitor.visit(result.cst);
+        const buffer = cbor.encode(value);
+
+        const commentedHex = await cbor.Commented.comment(buffer);
+
+        for (const panel of this.webviews.get(uri)) {
+          this.postMessage(panel, "updateHex", { text: commentedHex });
+        }
+      } catch (e) {
+        console.error("Hex-View Update fehlgeschlagen:", e);
+      }
+    }
 
     this.diagnostics.set(uri, diagnostics);
 
@@ -571,11 +601,33 @@ export class CborEditorProvider
             <title>CBOR EDN Editor</title>
             <style>
                 html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
-                #container { width: 100%; height: 100%; }
+                #container { display: flex; width: 100%; height: 100%; }
+
+                #editor-part { 
+                    width: 60%;      
+                    height: 100%; 
+                    border-right: 1px solid var(--vscode-panel-border); 
+                }
+
+                #hex-part { 
+                    width: 40%;       
+                    height: 100%; 
+                    font-family: 'Consolas', 'Courier New', monospace;
+                    white-space: pre; 
+                    overflow: auto;   
+                    padding: 10px;
+                    box-sizing: border-box;                    
+                    background-color: var(--vscode-editor-background);
+                    color: var(--vscode-editor-foreground);
+                    font-size: var(--vscode-editor-font-size);
+                }
             </style>
         </head>
         <body>
-            <div id="container"></div>
+            <div id="container">
+              <div id="editor-part"></div>
+              <div id="hex-part"></div>
+            </div>
             
             <script nonce="${nonce}" src="https://unpkg.com/monaco-editor@latest/min/vs/loader.js"></script>
             

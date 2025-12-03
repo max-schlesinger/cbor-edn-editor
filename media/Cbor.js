@@ -55,14 +55,17 @@
       colors: {},
     });
 
-    const editor = monaco.editor.create(document.getElementById("container"), {
-      value: "",
-      language: "cbor-edn",
-      theme: "cbor-theme",
-      automaticLayout: true,
-      minimap: { enabled: false },
-      scrollBeyondLastLine: false,
-    });
+    const editor = monaco.editor.create(
+      document.getElementById("editor-part"),
+      {
+        value: "",
+        language: "cbor-edn",
+        theme: "cbor-theme",
+        automaticLayout: true,
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+      },
+    );
 
     let isEditable = true;
 
@@ -102,11 +105,17 @@
           });
           break;
 
+        case "updateHex":
+          const hexContainer = document.getElementById("hex-part");
+          if (hexContainer) {
+            hexContainer.textContent = message.body.text;
+          }
+          break;
+
         case "syntaxError":
           console.log("Nachricht empfangen:", message);
           const rawMarkers = message.body.markers || [];
 
-          // Wir müssen die Marker für Monaco anpassen
           const markers = rawMarkers.map((m) => {
             return {
               startLineNumber: m.startLineNumber,
@@ -114,13 +123,13 @@
               endLineNumber: m.endLineNumber,
               endColumn: m.endColumn,
               message: m.message,
-              // WICHTIG: Erzwinge hier "Error" (Rot), egal was vom Backend kommt
+
               severity: monaco.MarkerSeverity.Error,
             };
           });
 
           monaco.editor.setModelMarkers(
-            editor.getModel(), // <--- KORREKTUR: Das [0] muss weg!
+            editor.getModel(),
             "cbor-errors",
             markers,
           );

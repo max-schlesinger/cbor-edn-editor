@@ -157,7 +157,7 @@ export class CborVisitor extends BaseCborVisitor {
   value(ctx: any) {
     if (ctx.map) return this.visit(ctx.map);
     if (ctx.array) return this.visit(ctx.array);
-    if (ctx.String) return JSON.parse(ctx.String[0].image); // Entfernt Quotes
+    if (ctx.String) return JSON.parse(ctx.String[0].image);
     if (ctx.HexBytes) {
       const hexString = ctx.HexBytes[0].image.slice(2, -1).replace(/\s/g, "");
       return Buffer.from(hexString, "hex");
