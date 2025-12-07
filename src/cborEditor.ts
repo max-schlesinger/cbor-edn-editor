@@ -441,6 +441,7 @@ export class CborEditorProvider
     }
 
     const result = parseCborEdn(text);
+    console.log("Anzahl_Fehler", result.parseErrors.length);
 
     result.lexErrors.forEach((err) => {
       const range = new vscode.Range(

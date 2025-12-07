@@ -65,7 +65,9 @@ export class CborParser extends CstParser {
   public tag!: () => any;
 
   constructor() {
-    super(allTokens);
+    super(allTokens, {
+      recoveryEnabled: true,
+    });
 
     this.cbor = this.RULE("cbor", () => {
       this.SUBRULE(this.value);
