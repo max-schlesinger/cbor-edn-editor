@@ -1,0 +1,121 @@
+seq             = S [item *(MSC item) SOC]
+one-item        = S item S
+item            = map / array / tagged
+                / number / simple
+                / string / streamstring
+
+string1         = (tstr / bstr) spec
+string1e        = string1 / ellipsis
+ellipsis        = 3*"." ; "..." or more dots
+string          = string1e *(S "+" S string1e)
+
+number          = (hexfloat / hexint / octint / binint
+                   / decnumber / nonfin) spec
+sign            = "+" / "-"
+decnumber       = [sign] (1*DIGIT ["." *DIGIT] / "." 1*DIGIT)
+                         ["e" [sign] 1*DIGIT]
+hexfloat        = [sign] "0x" (1*HEXDIG ["." *HEXDIG] / "." 1*HEXDIG)
+                         "p" [sign] 1*DIGIT
+hexint          = [sign] "0x" 1*HEXDIG
+octint          = [sign] "0o" 1*ODIGIT
+binint          = [sign] "0b" 1*BDIGIT
+nonfin          = %s"Infinity"
+                / %s"-Infinity"
+                / %s"NaN"
+simple          = %s"false"
+                / %s"true"
+                / %s"null"
+                / %s"undefined"
+                / %s"simple(" S item S ")"
+uint            = "0" / DIGIT1 *DIGIT
+tagged          = uint spec "(" S item S ")"
+
+app-prefix      = lcalpha *lcalnum ; including h and b64
+                / ucalpha *ucalnum ; tagged variant, if defined
+app-string      = app-prefix sqstr
+sqstr           = SQUOTE *single-quoted SQUOTE
+bstr            = app-string / sqstr / embedded
+                  ; app-string could be any type
+tstr            = DQUOTE *double-quoted DQUOTE
+embedded        = "<<" seq ">>"
+
+array           = "[" (specms S item *(MSC item) SOC / spec S) "]"
+map             = "{" (specms S keyp *(MSC keyp) SOC / spec S) "}"
+keyp            = item S ":" S item
+
+; We allow %x09 HT in prose, but not in strings
+blank           = %x09 / %x0A / %x0D / %x20
+non-slash       = blank / %x21-2e / %x30-D7FF / %xE000-10FFFF
+non-lf          = %x09 / %x0D / %x20-D7FF / %xE000-10FFFF
+comment         = "/" *non-slash "/"
+                / "#" *non-lf %x0A
+; optional space
+S               = *blank *(comment *blank)
+; mandatory space
+MS              = (blank/comment) S
+; mandatory comma and/or space
+MSC             = ("," S) / (MS ["," S])
+; optional comma and/or space
+SOC             = S ["," S]
+
+; check semantically that strings are either all text or all bytes
+; note that there must be at least one string to distinguish
+streamstring    = "(_" MS string *(MSC string) SOC ")"
+spec            = ["_" *wordchar]
+specms          = ["_" *wordchar MS]
+
+double-quoted   = unescaped
+                / SQUOTE
+                / "\" DQUOTE
+                / "\" escapable
+
+single-quoted   = unescaped
+                / DQUOTE
+                / "\" SQUOTE
+                / "\" escapable
+
+escapable       = %s"b" ; BS backspace U+0008
+                / %s"f" ; FF form feed U+000C
+                / %s"n" ; LF line feed U+000A
+                / %s"r" ; CR carriage return U+000D
+                / %s"t" ; HT horizontal tab U+0009
+                / "/"   ; / slash (solidus) U+002F (JSON!)
+                / "\"   ; \ backslash (reverse solidus) U+005C
+                / (%s"u" hexchar) ;  uXXXX      U+XXXX
+
+hexchar         = "{" (1*"0" [ hexscalar ] / hexscalar) "}"
+                / non-surrogate
+                / (high-surrogate "\" %s"u" low-surrogate)
+non-surrogate   = ((DIGIT / "A"/"B"/"C" / "E"/"F") 3HEXDIG)
+                / ("D" ODIGIT 2HEXDIG )
+high-surrogate  = "D" ("8"/"9"/"A"/"B") 2HEXDIG
+low-surrogate   = "D" ("C"/"D"/"E"/"F") 2HEXDIG
+hexscalar       = "10" 4HEXDIG / HEXDIG1 4HEXDIG
+                / non-surrogate / 1*3HEXDIG
+
+; Note that no other C0 characters are allowed, including %x09 HT
+unescaped       = %x0A ; new line
+                / %x0D ; carriage return -- ignored on input
+                / %x20-21
+                     ; omit 0x22 "
+                / %x23-26
+                     ; omit 0x27 '
+                / %x28-5B
+                     ; omit 0x5C \
+                / %x5D-D7FF ; skip surrogate code points
+                / %xE000-10FFFF
+
+DQUOTE          = %x22    ; " double quote
+SQUOTE          = "'"     ; ' single quote
+DIGIT           = %x30-39 ; 0-9
+DIGIT1          = %x31-39 ; 1-9
+ODIGIT          = %x30-37 ; 0-7
+BDIGIT          = %x30-31 ; 0-1
+HEXDIG          = DIGIT / "A" / "B" / "C" / "D" / "E" / "F"
+HEXDIG1         = DIGIT1 / "A" / "B" / "C" / "D" / "E" / "F"
+; Note: double-quoted strings as in "A" are case-insensitive in ABNF
+lcalpha         = %x61-7A ; a-z
+lcalnum         = lcalpha / DIGIT
+ucalpha         = %x41-5A ; A-Z
+ucalnum         = ucalpha / DIGIT
+wordchar        = "_" / lcalnum / ucalpha ; [_a-z0-9A-Z]

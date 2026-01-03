@@ -1,208 +1,213 @@
-import { createToken, Lexer, CstParser } from "chevrotain";
+import * as apgLib from "apg-lib";
 import * as cbor from "cbor";
 
-const WhiteSpace = createToken({
-  name: "WhiteSpace",
-  pattern: /\s+/,
-  group: Lexer.SKIPPED,
-});
-
-const LBrace = createToken({ name: "LBrace", pattern: /{/ });
-const RBrace = createToken({ name: "RBrace", pattern: /}/ });
-const LBracket = createToken({ name: "LBracket", pattern: /\[/ });
-const RBracket = createToken({ name: "RBracket", pattern: /]/ });
-const LParen = createToken({ name: "LParen", pattern: /\(/ });
-const RParen = createToken({ name: "RParen", pattern: /\)/ });
-const Colon = createToken({ name: "Colon", pattern: /:/ });
-const Comma = createToken({ name: "Comma", pattern: /,/ });
-
-const True = createToken({ name: "True", pattern: /true/ });
-const False = createToken({ name: "False", pattern: /false/ });
-const Null = createToken({ name: "Null", pattern: /null/ });
-const Undefined = createToken({ name: "Undefined", pattern: /undefined/ });
-
-const HexBytes = createToken({
-  name: "HexBytes",
-  pattern: /h'[0-9a-fA-F\s]*'/,
-});
-const StringLiteral = createToken({
-  name: "String",
-  pattern: /"(?:[^\\"]|\\.)*"/,
-});
-const NumberLiteral = createToken({
-  name: "Number",
-  pattern:
-    /-?(?:0|[1-9][0-9_]*)(?:\.[0-9_]+)?(?:[eE][+-]?[0-9_]+)?(?:_[0-9]+)?/,
-});
-
-const allTokens = [
-  WhiteSpace,
-  LBrace,
-  RBrace,
-  LBracket,
-  RBracket,
-  LParen,
-  RParen,
-  Colon,
-  Comma,
-  True,
-  False,
-  Null,
-  Undefined,
-  HexBytes,
-  StringLiteral,
-  NumberLiteral,
-];
-
-export const CborLexer = new Lexer(allTokens);
-
-export class CborParser extends CstParser {
-  public cbor!: () => any;
-  public value!: () => any;
-  public map!: () => any;
-  public pair!: () => any;
-  public array!: () => any;
-  public tag!: () => any;
-
-  constructor() {
-    super(allTokens, {
-      recoveryEnabled: true,
-    });
-
-    this.cbor = this.RULE("cbor", () => {
-      this.SUBRULE(this.value);
-    });
-
-    this.value = this.RULE("value", () => {
-      this.OR([
-        { ALT: () => this.SUBRULE(this.map) },
-        { ALT: () => this.SUBRULE(this.array) },
-        { ALT: () => this.CONSUME(StringLiteral) },
-        { ALT: () => this.CONSUME(HexBytes) },
-        { ALT: () => this.SUBRULE(this.tag) },
-        { ALT: () => this.CONSUME(NumberLiteral) },
-        { ALT: () => this.CONSUME(True) },
-        { ALT: () => this.CONSUME(False) },
-        { ALT: () => this.CONSUME(Null) },
-        { ALT: () => this.CONSUME(Undefined) },
-      ]);
-    });
-
-    this.map = this.RULE("map", () => {
-      this.CONSUME(LBrace);
-      this.MANY_SEP({
-        SEP: Comma,
-        DEF: () => this.SUBRULE(this.pair),
-      });
-      this.CONSUME(RBrace);
-    });
-
-    this.pair = this.RULE("pair", () => {
-      this.SUBRULE(this.value);
-      this.CONSUME(Colon);
-      this.SUBRULE2(this.value);
-    });
-
-    this.array = this.RULE("array", () => {
-      this.CONSUME(LBracket);
-      this.MANY_SEP({
-        SEP: Comma,
-        DEF: () => this.SUBRULE(this.value),
-      });
-      this.CONSUME(RBracket);
-    });
-
-    this.tag = this.RULE("tag", () => {
-      this.CONSUME(NumberLiteral);
-      this.CONSUME(LParen);
-      this.SUBRULE(this.value);
-      this.CONSUME(RParen);
-    });
-
-    this.performSelfAnalysis();
-  }
+// @ts-ignore
+const Grammar = require("./grammar");
+const grammar = new Grammar();
+const SEM_PRE = 200;
+const SEM_POST = 201;
+const SEM_OK = 0;
+interface ParseResult {
+  success: boolean;
+  value?: any;
+  error?: string;
+  maxMatched?: number;
 }
 
-export const parserInstance = new CborParser();
+export function parseCborEdn(input: string): ParseResult {
+  const parser = new apgLib.parser();
+  parser.ast = new apgLib.ast();
 
-export interface ParseResult {
-  cst: any;
-  lexErrors: any[];
-  parseErrors: any[];
-}
+  const stack: any[] = [];
 
-export function parseCborEdn(text: string): ParseResult {
-  const lexResult = CborLexer.tokenize(text);
+  const push = (v: any) => stack.push(v);
+  const pop = () => stack.pop();
 
-  parserInstance.input = lexResult.tokens;
+  const callbacks: { [key: string]: any } = {};
 
-  const cst = parserInstance.cbor();
-
-  return {
-    cst: cst,
-    lexErrors: lexResult.errors,
-    parseErrors: parserInstance.errors,
+  callbacks["tstr"] = (
+    state: number,
+    chars: number[],
+    phraseIndex: number,
+    phraseLength: number,
+  ) => {
+    if (state === SEM_POST) {
+      const s = apgLib.utils.charsToString(chars, phraseIndex, phraseLength);
+      try {
+        push(JSON.parse(s));
+      } catch (e) {
+        push(s.slice(1, -1));
+      }
+    }
+    return SEM_OK;
   };
-}
-const BaseCborVisitor = parserInstance.getBaseCstVisitorConstructor();
 
-export class CborVisitor extends BaseCborVisitor {
-  constructor() {
-    super();
-    this.validateVisitor();
-  }
-
-  cbor(ctx: any) {
-    return this.visit(ctx.value);
-  }
-
-  value(ctx: any) {
-    if (ctx.map) return this.visit(ctx.map);
-    if (ctx.array) return this.visit(ctx.array);
-    if (ctx.String) return JSON.parse(ctx.String[0].image);
-    if (ctx.HexBytes) {
-      const hexString = ctx.HexBytes[0].image.slice(2, -1).replace(/\s/g, "");
-      return Buffer.from(hexString, "hex");
+  callbacks["sqstr"] = (
+    state: number,
+    chars: number[],
+    phraseIndex: number,
+    phraseLength: number,
+  ) => {
+    if (state === SEM_POST) {
+      const s = apgLib.utils.charsToString(chars, phraseIndex, phraseLength);
+      push(s.slice(1, -1));
     }
-    if (ctx.tag) return this.visit(ctx.tag);
-    if (ctx.Number) {
-      let raw = ctx.Number[0].image;
-      raw = raw.replace(/_\d+$/, "");
-      const cleanNumberString = raw.replace(/_/g, "");
-      return Number(cleanNumberString);
+    return SEM_OK;
+  };
+
+  callbacks["number"] = (
+    state: number,
+    chars: number[],
+    phraseIndex: number,
+    phraseLength: number,
+  ) => {
+    if (state === SEM_POST) {
+      const s = apgLib.utils.charsToString(chars, phraseIndex, phraseLength);
+      const clean = s.replace(/_/g, "");
+      if (clean.includes(".") || clean.toLowerCase().includes("p")) {
+        push(parseFloat(clean));
+      } else {
+        const n = Number(clean);
+        push(Number.isSafeInteger(n) ? n : BigInt(clean));
+      }
     }
-    if (ctx.True) return true;
-    if (ctx.False) return false;
-    if (ctx.Null) return null;
-    if (ctx.Undefined) return undefined;
-    return null;
-  }
+    return SEM_OK;
+  };
 
-  map(ctx: any) {
-    const obj: any = {};
-    if (ctx.pair) {
-      ctx.pair.forEach((pairCtx: any) => {
-        const entry = this.visit(pairCtx);
-        obj[entry.key] = entry.value;
-      });
+  callbacks["uint"] = (
+    state: number,
+    chars: number[],
+    phraseIndex: number,
+    phraseLength: number,
+  ) => {
+    if (state === SEM_POST) {
+      const s = apgLib.utils.charsToString(chars, phraseIndex, phraseLength);
+      push(parseInt(s, 10));
     }
-    return obj;
+    return SEM_OK;
+  };
+
+  callbacks["simple"] = (
+    state: number,
+    chars: number[],
+    phraseIndex: number,
+    phraseLength: number,
+  ) => {
+    if (state === SEM_POST) {
+      const val = apgLib.utils.charsToString(chars, phraseIndex, phraseLength);
+      if (val === "true") push(true);
+      else if (val === "false") push(false);
+      else if (val === "null") push(null);
+      else if (val === "undefined") push(undefined);
+    }
+    return SEM_OK;
+  };
+
+  callbacks["app-prefix"] = (
+    state: number,
+    chars: number[],
+    phraseIndex: number,
+    phraseLength: number,
+  ) => {
+    if (state === SEM_POST) {
+      const prefix = apgLib.utils.charsToString(
+        chars,
+        phraseIndex,
+        phraseLength,
+      );
+      push(prefix);
+    }
+    return SEM_OK;
+  };
+
+  callbacks["app-string"] = (state: number) => {
+    if (state === SEM_PRE) {
+      push("__MARKER_APPSTR__");
+    } else if (state === SEM_POST) {
+      const content = pop();
+      const prefix = pop();
+      const marker = pop();
+      if (marker !== "__MARKER_APPSTR__") {
+        push(content);
+      } else {
+        if (prefix === "h") push(Buffer.from(content, "hex"));
+        else if (prefix === "b64") push(Buffer.from(content, "base64"));
+        else push(content);
+      }
+    }
+    return SEM_OK;
+  };
+
+  callbacks["array"] = (state: number) => {
+    if (state === SEM_PRE) {
+      push("__MARKER_ARRAY__");
+    } else if (state === SEM_POST) {
+      const items = [];
+      while (stack.length > 0) {
+        const item = pop();
+        if (item === "__MARKER_ARRAY__") break;
+        items.unshift(item);
+      }
+      push(items);
+    }
+    return SEM_OK;
+  };
+
+  callbacks["map"] = (state: number) => {
+    if (state === SEM_PRE) {
+      push("__MARKER_MAP__");
+    } else if (state === SEM_POST) {
+      const items = [];
+      while (stack.length > 0) {
+        const item = pop();
+        if (item === "__MARKER_MAP__") break;
+        items.unshift(item);
+      }
+      const map = new Map();
+      for (let i = 0; i < items.length; i += 2) {
+        map.set(items[i], items[i + 1]);
+      }
+      push(map);
+    }
+    return SEM_OK;
+  };
+
+  callbacks["tagged"] = (state: number) => {
+    if (state === SEM_PRE) {
+      push("__MARKER_TAG__");
+    } else if (state === SEM_POST) {
+      const content = pop();
+      const tagNr = pop();
+      const marker = pop();
+      if (marker === "__MARKER_TAG__") push(new cbor.Tagged(tagNr, content));
+      else push(content);
+    }
+    return SEM_OK;
+  };
+
+  if (grammar.rules) {
+    grammar.rules.forEach((rule: any) => {
+      const name = rule.name;
+      const lower = rule.lower;
+
+      const cb = callbacks[name] || callbacks[lower];
+      if (cb) {
+        parser.ast.callbacks[name] = cb;
+        if (lower && lower !== name) parser.ast.callbacks[lower] = cb;
+      }
+    });
   }
 
-  pair(ctx: any) {
-    const key = this.visit(ctx.value[0]);
-    const val = this.visit(ctx.value[1]);
-    return { key, value: val };
-  }
+  const inputChars = apgLib.utils.stringToChars(input);
+  const result = parser.parse(grammar, 0, inputChars);
 
-  array(ctx: any) {
-    if (!ctx.value) return [];
-    return ctx.value.map((v: any) => this.visit(v));
-  }
+  if (result.success && result.length === inputChars.length) {
+    parser.ast.translate({});
+    const finalValue = stack[0];
 
-  tag(ctx: any) {
-    const tagNumber = Number(ctx.Number[0].image);
-    const content = this.visit(ctx.value);
-    return new cbor.Tagged(tagNumber, content);
+    return { success: true, value: finalValue };
+  } else {
+    const msg = `Parser Error at index ${result.maxMatched}`;
+    return { success: false, error: msg, maxMatched: result.maxMatched };
   }
 }
