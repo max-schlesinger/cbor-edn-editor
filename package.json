@@ -36,8 +36,23 @@
         "command": "scittPreview.Cbor.new",
         "title": "Create new CBOR Document",
         "category": "CBOR"
+      },
+      {
+        "command": "cbor-tools.saveAsEdn",
+        "title": "Export as EDN",
+        "category": "CBOR",
+        "icon": "$(save-as)"
       }
-    ]
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "command": "cbor-tools.saveAsEdn",
+          "group": "navigation",
+          "when": "activeCustomEditorId == 'cbor-tools.cbor'"
+        }
+      ]
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

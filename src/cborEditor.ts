@@ -221,6 +221,54 @@ export class CborEditorProvider
   constructor(private readonly _context: vscode.ExtensionContext) {
     this.diagnostics = vscode.languages.createDiagnosticCollection("cbor-edn");
     this._context.subscriptions.push(this.diagnostics);
+    this._context.subscriptions.push(
+      vscode.commands.registerCommand("cbor-tools.saveAsEdn", async () => {
+        const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+
+        if (!activeTab || !(activeTab.input instanceof vscode.TabInputCustom)) {
+          vscode.window.showErrorMessage("Please open a CBOR file");
+          return;
+        }
+
+        const uri = activeTab.input.uri;
+
+        const panels = Array.from(this.webviews.get(uri));
+        if (!panels.length) {
+          vscode.window.showErrorMessage("No editor panel found");
+          return;
+        }
+        const panel = panels[0];
+
+        try {
+          const ednText = await this.postMessageWithResponse<string>(
+            panel,
+            "getEdnText",
+            {},
+          );
+
+          const saveUri = await vscode.window.showSaveDialog({
+            defaultUri: uri.with({
+              path: uri.path.replace(/\.(cbor|png)$/, ".edn"),
+            }),
+            filters: { "EDN Text": ["edn", "txt"] },
+            saveLabel: "Export EDN",
+          });
+
+          if (saveUri) {
+            const data = new TextEncoder().encode(ednText);
+
+            await vscode.workspace.fs.writeFile(saveUri, data);
+
+            vscode.window.showInformationMessage(
+              `Exportiert: ${saveUri.fsPath}`,
+            );
+          }
+        } catch (e: any) {
+          console.error(e);
+          vscode.window.showErrorMessage("Fehler: " + e.message);
+        }
+      }),
+    );
   }
 
   public static register(context: vscode.ExtensionContext): vscode.Disposable {
