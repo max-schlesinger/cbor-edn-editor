@@ -345,8 +345,12 @@ export class CborEditorProvider
 
           const result = parseCborEdn(ednText);
 
-          if (!result.success) {
-            const msg = `Kann nicht speichern: ${result.error}`;
+          const hasErrors =
+            result.lexErrors.length > 0 || result.parseErrors.length > 0;
+
+          if (hasErrors) {
+            const firstError = result.lexErrors[0] || result.parseErrors[0];
+            const msg = `Kann nicht speichern: ${firstError.message}`;
             console.error("--- [DEBUG] PARSER ERROR:", msg);
             vscode.window.showErrorMessage(msg);
             throw new Error(msg);
@@ -517,39 +521,88 @@ export class CborEditorProvider
     uri: vscode.Uri,
     text: string,
   ): Promise<void> {
-    const diagnostics: vscode.Diagnostic[] = [];
-    const redMarkers: any[] = [];
-
     if (!text || text.trim().length === 0) {
-      this.diagnostics.set(uri, diagnostics);
+      this.diagnostics.set(uri, []);
       return;
     }
 
     const result = parseCborEdn(text);
+    const diagnostics: vscode.Diagnostic[] = [];
+    const redMarkers: any[] = [];
 
-    if (!result.success) {
-      const errorIndex = result.maxMatched;
-      const lines = text.slice(0, errorIndex).split("\n");
-      const line = lines.length;
-      const col = lines[lines.length - 1].length + 1;
+    if (result.lexErrors.length > 0) {
+      result.lexErrors.forEach((err: any) => {
+        const line = err.line ? err.line - 1 : 0;
+        const col = err.column ? err.column - 1 : 0;
+        const length = err.length || 1;
 
-      const range = new vscode.Range(line - 1, col - 1, line - 1, col);
+        const range = new vscode.Range(line, col, line, col + length);
+        const msg = `Lexer Error: ${err.message}`;
 
-      const msg = result.error || "Syntax Error";
-
-      diagnostics.push(
-        new vscode.Diagnostic(range, msg, vscode.DiagnosticSeverity.Error),
-      );
-
-      redMarkers.push({
-        startLineNumber: line,
-        startColumn: col,
-        endLineNumber: line,
-        endColumn: col + 1,
-        message: msg,
-        severity: 3,
+        diagnostics.push(
+          new vscode.Diagnostic(range, msg, vscode.DiagnosticSeverity.Error),
+        );
+        redMarkers.push({
+          startLineNumber: line + 1,
+          startColumn: col + 1,
+          endLineNumber: line + 1,
+          endColumn: col + 1 + length,
+          message: msg,
+          severity: 8,
+        });
       });
-    } else {
+    }
+
+    if (result.parseErrors.length > 0) {
+      result.parseErrors.forEach((err: any) => {
+        const token = err.token;
+        let range: vscode.Range;
+        let startLine = 1,
+          startCol = 1,
+          endLine = 1,
+          endCol = 2;
+
+        if (token && token.startLine && token.startColumn) {
+          const sl = token.startLine - 1;
+          const sc = token.startColumn - 1;
+
+          const el = token.endLine ? token.endLine - 1 : sl;
+          let ec = token.endColumn ? token.endColumn : sc + 1;
+
+          if (ec <= sc) ec = sc + 1;
+
+          range = new vscode.Range(sl, sc, el, ec);
+
+          startLine = token.startLine;
+          startCol = token.startColumn;
+          endLine = token.endLine || startLine;
+          endCol = (token.endColumn || startCol) + 1;
+        } else {
+          range = new vscode.Range(0, 0, 0, 1);
+        }
+
+        const msg = `Syntax Error: ${err.message}`;
+        diagnostics.push(
+          new vscode.Diagnostic(range, msg, vscode.DiagnosticSeverity.Error),
+        );
+
+        redMarkers.push({
+          startLineNumber: startLine,
+          startColumn: startCol,
+          endLineNumber: endLine,
+          endColumn: endCol,
+          message: msg,
+          severity: 8,
+        });
+      });
+    }
+    this.diagnostics.set(uri, diagnostics);
+
+    for (const panel of this.webviews.get(uri)) {
+      this.postMessage(panel, "syntaxError", { markers: redMarkers });
+    }
+
+    if (result.lexErrors.length === 0 && result.parseErrors.length === 0) {
       try {
         const buffer = cbor.encode(result.value);
         const commentedHex = await cbor.Commented.comment(buffer);
@@ -559,12 +612,6 @@ export class CborEditorProvider
       } catch (e) {
         console.error("Hex-View Update fehlgeschlagen:", e);
       }
-    }
-
-    this.diagnostics.set(uri, diagnostics);
-
-    for (const panel of this.webviews.get(uri)) {
-      this.postMessage(panel, "syntaxError", { markers: redMarkers });
     }
   }
   private prettyPrintEDN(text: string): string {
