@@ -67,6 +67,33 @@
       },
     );
 
+    setTimeout(() => {
+      editor.focus();
+    }, 100);
+    editor.onKeyDown((e) => {
+      if ((e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyV) {
+        e.preventDefault();
+        e.stopPropagation();
+        navigator.clipboard
+          .readText()
+          .then((text) => {
+            if (!text) return;
+
+            const selection = editor.getSelection();
+            editor.executeEdits("manual-paste", [
+              {
+                range: selection,
+                text: text,
+                forceMoveMarkers: true,
+              },
+            ]);
+          })
+          .catch((err) => {
+            console.error("Paste fehlgeschlagen:", err);
+          });
+      }
+    });
+
     let isEditable = true;
 
     editor.onDidChangeModelContent(() => {

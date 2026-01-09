@@ -51,11 +51,11 @@ const StringLiteral = createToken({
 
 const HexFloat = createToken({
   name: "HexFloat",
-  pattern: /-?0x[0-9a-fA-F]+(\.[0-9a-fA-F]*)?[pP][+-]?\d+/,
+  pattern: /[+-]?0x[0-9a-fA-F]+(\.[0-9a-fA-F]*)?[pP][+-]?\d+/,
 });
-const HexInt = createToken({ name: "HexInt", pattern: /-?0x[0-9a-fA-F]+/ });
-const BinInt = createToken({ name: "BinInt", pattern: /-?0b[0-1]+/ });
-const OctInt = createToken({ name: "OctInt", pattern: /-?0o[0-7]+/ });
+const HexInt = createToken({ name: "HexInt", pattern: /[+-]?0x[0-9a-fA-F]+/ });
+const BinInt = createToken({ name: "BinInt", pattern: /[+-]?0b[0-1]+/ });
+const OctInt = createToken({ name: "OctInt", pattern: /[+-]?0o[0-7]+/ });
 const NonFin = createToken({
   name: "NonFin",
   pattern: /Infinity|-Infinity|NaN/,
@@ -63,10 +63,10 @@ const NonFin = createToken({
 const NumberLiteral = createToken({
   name: "Number",
   pattern:
-    /-?(?:0|[1-9][0-9_]*)(?:\.[0-9_]+)?(?:[eE][+-]?[0-9_]+)?(?:_[0-9]+)?/,
+    /[+-]?(?:0|[1-9][0-9_]*)(?:\.[0-9_]+)?(?:[eE][+-]?[0-9_]+)?(?:_[0-9]+)?/,
 });
 const Spec = createToken({ name: "Spec", pattern: /_[a-zA-Z0-9_]+/ });
-const Ellipsis = createToken({ name: "Ellipsis", pattern: /\.\.\./ });
+const Ellipsis = createToken({ name: "Ellipsis", pattern: /\.{3,}/ });
 const AppString = createToken({
   name: "AppString",
   pattern: /[a-zA-Z][a-zA-Z0-9]*'(?:[^\\']|\\.)*'/,
@@ -87,7 +87,6 @@ const allTokens = [
   RParen,
   Colon,
   Comma,
-  Plus,
   True,
   False,
   Null,
@@ -104,6 +103,7 @@ const allTokens = [
   OctInt,
   NonFin,
   NumberLiteral,
+  Plus,
 ];
 
 export const CborLexer = new Lexer(allTokens);
@@ -119,6 +119,7 @@ export class CborParser extends CstParser {
   public embedded!: () => any;
   public string_concatenation!: () => any;
   public annotated_string!: () => any;
+  public annotated_number!: () => any;
   public simple_value!: () => any;
 
   constructor() {
@@ -136,21 +137,12 @@ export class CborParser extends CstParser {
       this.OR([
         { ALT: () => this.SUBRULE(this.map) },
         { ALT: () => this.SUBRULE(this.array) },
-        { ALT: () => this.SUBRULE(this.tag) },
+        { GATE: this.BACKTRACK(this.tag), ALT: () => this.SUBRULE(this.tag) },
         { ALT: () => this.SUBRULE(this.string_concatenation) },
         { ALT: () => this.SUBRULE(this.streamstring) },
-        { ALT: () => this.SUBRULE(this.embedded) },
-        { ALT: () => this.SUBRULE(this.simple_value) },
 
-        { ALT: () => this.CONSUME(HexBytes) },
-        { ALT: () => this.CONSUME(B64Bytes) },
-        { ALT: () => this.CONSUME(AppString) },
-        { ALT: () => this.CONSUME(HexFloat) },
-        { ALT: () => this.CONSUME(HexInt) },
-        { ALT: () => this.CONSUME(OctInt) },
-        { ALT: () => this.CONSUME(BinInt) },
-        { ALT: () => this.CONSUME(NonFin) },
-        { ALT: () => this.CONSUME(NumberLiteral) },
+        { ALT: () => this.SUBRULE(this.simple_value) },
+        { ALT: () => this.SUBRULE(this.annotated_number) },
 
         { ALT: () => this.CONSUME(True) },
         { ALT: () => this.CONSUME(False) },
@@ -189,7 +181,12 @@ export class CborParser extends CstParser {
     });
 
     this.tag = this.RULE("tag", () => {
-      this.CONSUME(NumberLiteral);
+      this.OR([
+        { ALT: () => this.CONSUME(NumberLiteral) },
+        { ALT: () => this.CONSUME(HexInt) },
+        { ALT: () => this.CONSUME(OctInt) },
+        { ALT: () => this.CONSUME(BinInt) },
+      ]);
       this.OPTION(() => this.CONSUME(Spec));
       this.CONSUME(LParen);
       this.SUBRULE(this.value);
@@ -223,7 +220,23 @@ export class CborParser extends CstParser {
     this.annotated_string = this.RULE("annotated_string", () => {
       this.OR([
         { ALT: () => this.CONSUME(StringLiteral) },
+        { ALT: () => this.CONSUME(HexBytes) },
+        { ALT: () => this.CONSUME(B64Bytes) },
+        { ALT: () => this.CONSUME(AppString) },
+        { ALT: () => this.SUBRULE(this.embedded) },
         { ALT: () => this.CONSUME(Ellipsis) },
+      ]);
+      this.OPTION(() => this.CONSUME(Spec));
+    });
+
+    this.annotated_number = this.RULE("annotated_number", () => {
+      this.OR([
+        { ALT: () => this.CONSUME(HexFloat) },
+        { ALT: () => this.CONSUME(HexInt) },
+        { ALT: () => this.CONSUME(OctInt) },
+        { ALT: () => this.CONSUME(BinInt) },
+        { ALT: () => this.CONSUME(NonFin) },
+        { ALT: () => this.CONSUME(NumberLiteral) },
       ]);
       this.OPTION(() => this.CONSUME(Spec));
     });
@@ -269,28 +282,7 @@ export class CborVisitor extends BaseCborVisitor {
     if (ctx.streamstring) return this.visit(ctx.streamstring);
     if (ctx.embedded) return this.visit(ctx.embedded);
     if (ctx.simple_value) return this.visit(ctx.simple_value);
-    if (ctx.HexBytes) {
-      const hexString = ctx.HexBytes[0].image.slice(2, -1).replace(/\s/g, "");
-      return Buffer.from(hexString, "hex");
-    }
-    if (ctx.B64Bytes) {
-      const b64String = ctx.B64Bytes[0].image.slice(4, -1).replace(/\s/g, "");
-      return Buffer.from(b64String, "base64");
-    }
-
-    if (ctx.HexInt) return parseInt(ctx.HexInt[0].image, 16);
-    if (ctx.OctInt) return parseInt(ctx.OctInt[0].image.replace("0o", ""), 8);
-    if (ctx.BinInt) return parseInt(ctx.BinInt[0].image.replace("0b", ""), 2);
-    if (ctx.NonFin) return Number(ctx.NonFin[0].image);
-    if (ctx.HexFloat) {
-      return parseFloat(ctx.HexFloat[0].image);
-    }
-    if (ctx.Number) {
-      let raw = ctx.Number[0].image;
-      raw = raw.replace(/_\d+$/, "");
-      const cleanNumberString = raw.replace(/_/g, "");
-      return Number(cleanNumberString);
-    }
+    if (ctx.annotated_number) return this.visit(ctx.annotated_number);
 
     if (ctx.True) return true;
     if (ctx.False) return false;
@@ -323,7 +315,23 @@ export class CborVisitor extends BaseCborVisitor {
   }
 
   tag(ctx: any) {
-    const tagNumber = Number(ctx.Number[0].image);
+    const cleanSign = (str: string) =>
+      str.startsWith("+") ? str.slice(1) : str;
+    let tagNumber = 0;
+
+    if (ctx.HexInt) {
+      tagNumber = parseInt(cleanSign(ctx.HexInt[0].image), 16);
+    } else if (ctx.OctInt) {
+      tagNumber = parseInt(cleanSign(ctx.OctInt[0].image).replace("0o", ""), 8);
+    } else if (ctx.BinInt) {
+      tagNumber = parseInt(cleanSign(ctx.BinInt[0].image).replace("0b", ""), 2);
+    } else if (ctx.Number) {
+      let raw = ctx.Number[0].image;
+      raw = raw.replace(/_\d+$/, "");
+      const cleanNumberString = raw.replace(/_/g, "");
+      tagNumber = Number(cleanNumberString);
+    }
+
     const content = this.visit(ctx.value);
     return new cbor.Tagged(tagNumber, content);
   }
@@ -334,7 +342,50 @@ export class CborVisitor extends BaseCborVisitor {
       const raw = ctx.String[0].image;
       return JSON.parse(raw.startsWith("'") ? `"${raw.slice(1, -1)}"` : raw);
     }
+    if (ctx.HexBytes) {
+      const hex = ctx.HexBytes[0].image.slice(2, -1).replace(/\s/g, "");
+      return Buffer.from(hex, "hex");
+    }
+    if (ctx.B64Bytes) {
+      const b64 = ctx.B64Bytes[0].image.slice(4, -1).replace(/\s/g, "");
+      return Buffer.from(b64, "base64");
+    }
+    if (ctx.AppString) {
+      return ctx.AppString[0].image;
+    }
+    if (ctx.embedded) {
+      return this.visit(ctx.embedded);
+    }
     return "";
+  }
+
+  annotated_number(ctx: any) {
+    const cleanSign = (str: string) =>
+      str.startsWith("+") ? str.slice(1) : str;
+    if (ctx.HexInt) {
+      return parseInt(cleanSign(ctx.HexInt[0].image), 16);
+    }
+    if (ctx.OctInt) {
+      const raw = cleanSign(ctx.OctInt[0].image);
+      return parseInt(raw.replace("0o", ""), 8);
+    }
+    if (ctx.BinInt) {
+      const raw = cleanSign(ctx.BinInt[0].image);
+      return parseInt(raw.replace("0b", ""), 2);
+    }
+    if (ctx.HexFloat) {
+      return parseFloat(cleanSign(ctx.HexFloat[0].image));
+    }
+    if (ctx.Number) {
+      let raw = ctx.Number[0].image;
+      raw = raw.replace(/_\d+$/, "");
+      const cleanNumberString = raw.replace(/_/g, "");
+      return Number(cleanNumberString);
+    }
+    if (ctx.NonFin) {
+      return Number(ctx.NonFin[0].image);
+    }
+    return NaN;
   }
 
   string_concatenation(ctx: any) {
