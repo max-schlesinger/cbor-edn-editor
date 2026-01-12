@@ -1,4 +1,4 @@
-import { createToken, Lexer, CstParser } from "chevrotain";
+import { createToken, Lexer, CstParser, tokenMatcher } from "chevrotain";
 import * as cbor from "cbor";
 
 const Comment = createToken({
@@ -51,7 +51,8 @@ const StringLiteral = createToken({
 
 const HexFloat = createToken({
   name: "HexFloat",
-  pattern: /[+-]?0x[0-9a-fA-F]+(\.[0-9a-fA-F]*)?[pP][+-]?\d+/,
+  pattern:
+    /[+-]?0x(?:\.[0-9a-fA-F]+|[0-9a-fA-F]+(?:\.[0-9a-fA-F]*)?)[pP][+-]?[0-9]+/,
 });
 const HexInt = createToken({ name: "HexInt", pattern: /[+-]?0x[0-9a-fA-F]+/ });
 const BinInt = createToken({ name: "BinInt", pattern: /[+-]?0b[0-1]+/ });
@@ -63,7 +64,7 @@ const NonFin = createToken({
 const NumberLiteral = createToken({
   name: "Number",
   pattern:
-    /[+-]?(?:0|[1-9][0-9_]*)(?:\.[0-9_]+)?(?:[eE][+-]?[0-9_]+)?(?:_[0-9]+)?/,
+    /[+-]?(?:(?:0|[1-9](?:_?[0-9]+)*)(?:\.(?:[0-9]+(?:_[0-9]+)*)?)?|\.[0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?/,
 });
 const Spec = createToken({ name: "Spec", pattern: /_[a-zA-Z0-9_]+/ });
 const Ellipsis = createToken({ name: "Ellipsis", pattern: /\.{3,}/ });
@@ -137,7 +138,10 @@ export class CborParser extends CstParser {
       this.OR([
         { ALT: () => this.SUBRULE(this.map) },
         { ALT: () => this.SUBRULE(this.array) },
-        { GATE: this.BACKTRACK(this.tag), ALT: () => this.SUBRULE(this.tag) },
+        {
+          GATE: () => this.looksLikeTag(),
+          ALT: () => this.SUBRULE(this.tag),
+        },
         { ALT: () => this.SUBRULE(this.string_concatenation) },
         { ALT: () => this.SUBRULE(this.streamstring) },
 
@@ -196,7 +200,7 @@ export class CborParser extends CstParser {
     this.streamstring = this.RULE("streamstring", () => {
       this.CONSUME(StreamStart);
       this.MANY(() => {
-        this.CONSUME(StringLiteral);
+        this.SUBRULE(this.annotated_string);
         this.OPTION(() => this.CONSUME(Comma));
       });
 
@@ -248,6 +252,25 @@ export class CborParser extends CstParser {
       this.CONSUME(RParen);
     });
     this.performSelfAnalysis();
+  }
+
+  private looksLikeTag(): boolean {
+    const t1 = this.LA(1);
+    const isNum =
+      tokenMatcher(t1, NumberLiteral) ||
+      tokenMatcher(t1, HexInt) ||
+      tokenMatcher(t1, OctInt) ||
+      tokenMatcher(t1, BinInt);
+
+    if (!isNum) return false;
+    const t2 = this.LA(2);
+    if (tokenMatcher(t2, LParen)) return true;
+    if (tokenMatcher(t2, Spec)) {
+      const t3 = this.LA(3);
+      if (tokenMatcher(t3, LParen)) return true;
+    }
+
+    return false;
   }
 }
 
@@ -328,8 +351,7 @@ export class CborVisitor extends BaseCborVisitor {
     } else if (ctx.Number) {
       let raw = ctx.Number[0].image;
       raw = raw.replace(/_\d+$/, "");
-      const cleanNumberString = raw.replace(/_/g, "");
-      tagNumber = Number(cleanNumberString);
+      tagNumber = Number(raw);
     }
 
     const content = this.visit(ctx.value);
@@ -393,11 +415,15 @@ export class CborVisitor extends BaseCborVisitor {
   }
 
   streamstring(ctx: any) {
-    if (!ctx.String) return "";
-    return ctx.String.map((t: any) => {
-      const raw = t.image;
-      return JSON.parse(raw.startsWith("'") ? `"${raw.slice(1, -1)}"` : raw);
-    }).join("");
+    if (ctx.annotated_string) {
+      const parts = ctx.annotated_string.map((child: any) => this.visit(child));
+      if (parts.length > 0 && Buffer.isBuffer(parts[0])) {
+        return Buffer.concat(parts);
+      } else {
+        return parts.join("");
+      }
+    }
+    return "";
   }
 
   embedded(ctx: any) {
