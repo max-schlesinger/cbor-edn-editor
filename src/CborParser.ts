@@ -199,7 +199,7 @@ export class CborParser extends CstParser {
 
     this.streamstring = this.RULE("streamstring", () => {
       this.CONSUME(StreamStart);
-      this.MANY(() => {
+      this.AT_LEAST_ONE(() => {
         this.SUBRULE(this.annotated_string);
         this.OPTION(() => this.CONSUME(Comma));
       });
@@ -250,6 +250,7 @@ export class CborParser extends CstParser {
       this.CONSUME(LParen);
       this.CONSUME(NumberLiteral);
       this.CONSUME(RParen);
+      this.OPTION(() => this.CONSUME(Spec));
     });
     this.performSelfAnalysis();
   }
@@ -362,7 +363,13 @@ export class CborVisitor extends BaseCborVisitor {
     if (ctx.Ellipsis) return "...";
     if (ctx.String) {
       const raw = ctx.String[0].image;
-      return JSON.parse(raw.startsWith("'") ? `"${raw.slice(1, -1)}"` : raw);
+      if (raw.startsWith("'")) {
+        let content = raw.slice(1, -1);
+        content = content.replace(/\\'/g, "'");
+        content = content.replace(/"/g, '\\"');
+        return JSON.parse(`"${content}"`);
+      }
+      return JSON.parse(raw);
     }
     if (ctx.HexBytes) {
       const hex = ctx.HexBytes[0].image.slice(2, -1).replace(/\s/g, "");
@@ -430,6 +437,9 @@ export class CborVisitor extends BaseCborVisitor {
     return this.visit(ctx.cbor);
   }
   simple_value(ctx: any) {
+    if (!ctx.Number || ctx.Number.length === 0) {
+      return new cbor.Simple(0);
+    }
     const val = Number(ctx.Number[0].image);
     return new cbor.Simple(val);
   }
