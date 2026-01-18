@@ -14,7 +14,8 @@ interface CborEdit {
 }
 
 interface CborDocumentDelegate {
-  getFileData(): Promise<Uint8Array>;
+  getFileData(destination: vscode.Uri): Promise<Uint8Array>;
+  //getFileData(): Promise<Uint8Array>;
 }
 
 /**
@@ -150,13 +151,15 @@ class CborDocument extends Disposable implements vscode.CustomDocument {
     targetResource: vscode.Uri,
     cancellation: vscode.CancellationToken,
   ): Promise<void> {
-    const fileData = await this._delegate.getFileData();
+    const fileData = await this._delegate.getFileData(targetResource);
     if (cancellation.isCancellationRequested) {
       return;
     }
     await vscode.workspace.fs.writeFile(targetResource, fileData);
 
-    this._documentData = fileData;
+    if (targetResource.toString() === this.uri.toString()) {
+      this._documentData = fileData;
+    }
   }
 
   /**
@@ -269,6 +272,52 @@ export class CborEditorProvider
         }
       }),
     );
+    this._context.subscriptions.push(
+      vscode.commands.registerCommand("cbor-tools.saveAsCbor", async () => {
+        const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+        if (!activeTab || !(activeTab.input instanceof vscode.TabInputCustom)) {
+          return;
+        }
+        const uri = activeTab.input.uri;
+        const panels = Array.from(this.webviews.get(uri));
+        if (!panels.length) return;
+        const panel = panels[0];
+
+        try {
+          const ednText = await this.postMessageWithResponse<string>(
+            panel,
+            "getEdnText",
+            {},
+          );
+
+          const result = parseCborEdn(ednText);
+          if (result.lexErrors.length > 0 || result.parseErrors.length > 0) {
+            throw new Error(
+              "Syntaxfehler! Kann nicht als CBOR gespeichert werden.",
+            );
+          }
+
+          const cborBytes = cbor.encode(result.value);
+
+          const saveUri = await vscode.window.showSaveDialog({
+            defaultUri: uri.with({
+              path: uri.path.replace(/\.(edn|txt)$/, ".cbor"),
+            }),
+            filters: { "CBOR Binary": ["cbor"] },
+            saveLabel: "Export CBOR",
+          });
+
+          if (saveUri) {
+            await vscode.workspace.fs.writeFile(saveUri, cborBytes);
+            vscode.window.showInformationMessage(
+              `Exportiert als CBOR: ${saveUri.fsPath}`,
+            );
+          }
+        } catch (e: any) {
+          vscode.window.showErrorMessage("Fehler: " + e.message);
+        }
+      }),
+    );
   }
 
   public static register(context: vscode.ExtensionContext): vscode.Disposable {
@@ -319,8 +368,9 @@ export class CborEditorProvider
       uri,
       openContext.backupId,
       {
-        getFileData: async () => {
+        getFileData: async (destination: vscode.Uri) => {
           console.log("\n--- [DEBUG] START SAVING ---");
+          console.log("--- [DEBUG] Ziel-Datei:", destination.fsPath);
 
           const webviewsForDocument = Array.from(
             this.webviews.get(document.uri),
@@ -339,72 +389,60 @@ export class CborEditorProvider
           console.log(
             `--- [DEBUG] Empfangener Text (${ednText.length} chars):`,
           );
-          console.log(
-            ednText.slice(0, 200) + (ednText.length > 200 ? "..." : ""),
-          );
 
           const result = parseCborEdn(ednText);
-
           const hasErrors =
             result.lexErrors.length > 0 || result.parseErrors.length > 0;
 
           if (hasErrors) {
             const firstError = result.lexErrors[0] || result.parseErrors[0];
-            const msg = `Kann nicht speichern: ${firstError.message}`;
+            const msg = `Kann nicht speichern (Syntaxfehler): ${firstError.message}`;
             console.error("--- [DEBUG] PARSER ERROR:", msg);
             vscode.window.showErrorMessage(msg);
             throw new Error(msg);
           }
+          console.log("--- [DEBUG] Parser erfolgreich (Validierung OK).");
 
-          console.log("--- [DEBUG] Parser erfolgreich.");
+          const isEdnDestination = destination.fsPath
+            .toLowerCase()
+            .endsWith(".edn");
 
-          const value = result.value;
-          try {
-            const jsonPreview = JSON.stringify(value, null, 2);
-            console.log("--- [DEBUG] Geparstes Objekt (Vorschau):");
-            console.log(jsonPreview ? jsonPreview.slice(0, 500) : "undefined");
-            if (Array.isArray(value)) {
-              console.log(`--- [DEBUG] Ist Array mit Länge: ${value.length}`);
-              if (value.length === 0) {
-                console.warn(
-                  "--- [DEBUG] WARNUNG: Array ist LEER! Das führt zu 0 Bytes oder '[]'",
-                );
-              }
-            } else if (value instanceof Map) {
-              console.log(`--- [DEBUG] Ist Map mit Größe: ${value.size}`);
+          if (isEdnDestination) {
+            console.log("--- [DEBUG] Speichere als EDN Text.");
+
+            return new TextEncoder().encode(ednText);
+          } else {
+            console.log("--- [DEBUG] Speichere als CBOR Binär.");
+            const value = result.value;
+
+            try {
+              try {
+                const jsonPreview = JSON.stringify(value, null, 2);
+              } catch (e) {}
+
+              console.log("--- [DEBUG] Starte cbor.encode...");
+              const cborBytes = cbor.encode(value);
+
+              console.log(
+                `--- [DEBUG] Encoding fertig. Bytes: ${cborBytes.length}`,
+              );
+              console.log(
+                "--- [DEBUG] Hex:",
+                cborBytes.toString("hex").slice(0, 100),
+              );
+
+              return new Uint8Array(cborBytes);
+            } catch (e: any) {
+              console.error("--- [DEBUG] ENCODING CRASH:", e);
+              vscode.window.showErrorMessage(
+                "Fehler beim Kodieren: " + e.message,
+              );
+              return document.documentData;
             }
-          } catch (logErr) {
-            console.log(
-              "--- [DEBUG] Objekt konnte nicht als JSON geloggt werden (Circular?)",
-              value,
-            );
-          }
-
-          try {
-            console.log("--- [DEBUG] Starte cbor.encode...");
-
-            const cborBytes = cbor.encode(value);
-
-            console.log(
-              `--- [DEBUG] Encoding fertig. Bytes: ${cborBytes.length}`,
-            );
-            console.log(
-              "--- [DEBUG] Hex:",
-              cborBytes.toString("hex").slice(0, 100),
-            );
-
-            return new Uint8Array(cborBytes);
-          } catch (e: any) {
-            console.error("--- [DEBUG] ENCODING CRASH:", e);
-            vscode.window.showErrorMessage(
-              "Fehler beim Kodieren: " + e.message,
-            );
-            return document.documentData;
           }
         },
       },
     );
-
     const listeners: vscode.Disposable[] = [];
     listeners.push(
       document.onDidChange((e) => {
@@ -430,11 +468,15 @@ export class CborEditorProvider
     webviewPanel: vscode.WebviewPanel,
     _token: vscode.CancellationToken,
   ): Promise<void> {
+    console.log(
+      "--- DEBUG: resolveCustomEditor gestartet für",
+      document.uri.toString(),
+    );
     this.webviews.add(document.uri, webviewPanel);
     webviewPanel.webview.options = { enableScripts: true };
     webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
 
-    webviewPanel.webview.onDidReceiveMessage((e) => {
+    webviewPanel.webview.onDidReceiveMessage(async (e) => {
       if (e.type === "ready") {
         if (document.uri.scheme === "untitled") {
           this.postMessage(webviewPanel, "init", {
@@ -445,36 +487,64 @@ export class CborEditorProvider
           const editable = vscode.workspace.fs.isWritableFileSystem(
             document.uri.scheme,
           );
+          const isEdnFile = document.uri.fsPath.toLowerCase().endsWith(".edn");
 
-          cbor
-            .diagnose(document.documentData)
-            .then(async (text) => {
-              let formattedText = this.prettyPrintEDN(text);
-              formattedText = formattedText.replace(/(\d+\.\d+)_\d\b/g, "$1");
+          if (isEdnFile) {
+            const textContent = new TextDecoder().decode(document.documentData);
 
-              this.postMessage(webviewPanel, "init", {
-                value: formattedText,
-                editable,
-              });
+            this.postMessage(webviewPanel, "init", {
+              value: textContent,
+              editable,
+            });
 
-              try {
-                const hexString = await cbor.Commented.comment(
-                  document.documentData,
-                );
+            try {
+              const result = parseCborEdn(textContent);
+
+              if (
+                result.lexErrors.length === 0 &&
+                result.parseErrors.length === 0
+              ) {
+                const buffer = cbor.encode(result.value);
+                const hexString = await cbor.Commented.comment(buffer);
                 this.postMessage(webviewPanel, "updateHex", {
                   text: hexString,
                 });
-              } catch (err) {
-                console.error("Konnte Hex-View beim Start nicht laden:", err);
               }
-            })
-            .catch((err) => {
-              console.error("Diagnose failed", err);
-              this.postMessage(webviewPanel, "init", {
-                value: "Fehler beim Lesen der CBOR Datei: " + err.message,
-                editable: false,
+            } catch (err) {
+              console.error(
+                "Fehler beim Generieren der Hex-View für EDN:",
+                err,
+              );
+            }
+          } else {
+            cbor
+              .diagnose(document.documentData)
+              .then(async (text) => {
+                let formattedText = this.prettyPrintEDN(text);
+                this.postMessage(webviewPanel, "init", {
+                  value: formattedText,
+                  editable,
+                });
+
+                try {
+                  const hexString = await cbor.Commented.comment(
+                    document.documentData,
+                  );
+                  this.postMessage(webviewPanel, "updateHex", {
+                    text: hexString,
+                  });
+                } catch (err) {
+                  console.error("Konnte Hex-View nicht laden:", err);
+                }
+              })
+              .catch((err) => {
+                console.error("Diagnose failed", err);
+                this.postMessage(webviewPanel, "init", {
+                  value: "Fehler beim Lesen der CBOR Datei: " + err.message,
+                  editable: false,
+                });
               });
-            });
+          }
         }
       } else {
         this.onMessage(document, e);
@@ -605,9 +675,9 @@ export class CborEditorProvider
     if (result.lexErrors.length === 0 && result.parseErrors.length === 0) {
       try {
         const buffer = cbor.encode(result.value);
-        const commentedHex = await cbor.Commented.comment(buffer);
+        const hexString = await cbor.Commented.comment(buffer);
         for (const panel of this.webviews.get(uri)) {
-          this.postMessage(panel, "updateHex", { text: commentedHex });
+          this.postMessage(panel, "updateHex", { text: hexString });
         }
       } catch (e) {
         console.error("Hex-View Update fehlgeschlagen:", e);
@@ -615,7 +685,7 @@ export class CborEditorProvider
     }
   }
   private prettyPrintEDN(text: string): string {
-    let output = "";
+    const output: string[] = [];
     let indentLevel = 0;
     const indent = "  ";
     let inString = false;
@@ -623,38 +693,46 @@ export class CborEditorProvider
     for (let i = 0; i < text.length; i++) {
       const char = text[i];
 
-      if (char === '"' && text[i - 1] !== "\\") {
+      if ((char === '"' || char === "'") && text[i - 1] !== "\\") {
         inString = !inString;
       }
 
       if (inString) {
-        output += char;
+        output.push(char);
         continue;
       }
 
       switch (char) {
         case "{":
         case "[":
-          output += char + "\n" + indent.repeat(++indentLevel);
+          indentLevel++;
+          output.push(char + "\n" + indent.repeat(indentLevel));
           break;
+
         case "}":
         case "]":
-          output += "\n" + indent.repeat(--indentLevel) + char;
+          indentLevel = Math.max(0, indentLevel - 1);
+          output.push("\n" + indent.repeat(indentLevel) + char);
           break;
-        case ",":
-          output += char + "\n" + indent.repeat(indentLevel);
 
+        case ",":
+          output.push(char + "\n" + indent.repeat(indentLevel));
           if (text[i + 1] === " ") i++;
           break;
+
         case ":":
-          output += ": ";
+          output.push(": ");
           break;
+
         default:
-          output += char;
+          if (char !== "\n" && char !== "\r") {
+            output.push(char);
+          }
           break;
       }
     }
-    return output.trim();
+
+    return output.join("").trim();
   }
   //#endregion
 
@@ -681,6 +759,7 @@ export class CborEditorProvider
                 style-src ${webview.cspSource} 'unsafe-inline' https://unpkg.com; 
                 script-src 'nonce-${nonce}' 'unsafe-eval' https://unpkg.com blob:;
                 worker-src blob:;
+                connect-src https://unpkg.com data: blob:;
                 font-src https://unpkg.com data:;">
             
             <meta name="viewport" content="width=device-width, initial-scale=1.0">

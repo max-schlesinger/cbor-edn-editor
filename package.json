@@ -23,17 +23,21 @@
     "customEditors": [
       {
         "viewType": "cbor-tools.cbor",
-        "displayName": "CBOR",
+        "displayName": "CBOR EDN Editor",
         "selector": [
           {
             "filenamePattern": "*.cbor"
+          },
+          {
+            "filenamePattern": "*.edn"
           }
-        ]
+        ],
+        "priority": "default"
       }
     ],
     "commands": [
       {
-        "command": "scittPreview.Cbor.new",
+        "command": "cbor-tools.Cbor.new",
         "title": "Create new CBOR Document",
         "category": "CBOR"
       },
@@ -41,7 +45,13 @@
         "command": "cbor-tools.saveAsEdn",
         "title": "Export as EDN",
         "category": "CBOR",
-        "icon": "$(save-as)"
+        "icon": "$(file-code)"
+      },
+      {
+        "command": "cbor-tools.saveAsCbor",
+        "title": "Export as CBOR",
+        "category": "CBOR",
+        "icon": "$(file-binary)"
       }
     ],
     "menus": {
@@ -49,7 +59,12 @@
         {
           "command": "cbor-tools.saveAsEdn",
           "group": "navigation",
-          "when": "activeCustomEditorId == 'cbor-tools.cbor'"
+          "when": "activeCustomEditorId == 'cbor-tools.cbor' && resourceExtname == .cbor"
+        },
+        {
+          "command": "cbor-tools.saveAsCbor",
+          "group": "navigation",
+          "when": "activeCustomEditorId == 'cbor-tools.cbor' && resourceExtname == .edn"
         }
       ]
     }
