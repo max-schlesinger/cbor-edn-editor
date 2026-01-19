@@ -55,6 +55,132 @@
       colors: {},
     });
 
+    const CBOR_TAGS = {
+      0: "Standard Date/Time String (RFC 3339)",
+      1: "Epoch-based Date/Time (Timestamp)",
+      2: "Positive Bignum",
+      3: "Negative Bignum",
+      4: "Decimal Fraction",
+      5: "Bigfloat",
+      21: "Expected conversion to base64url encoding",
+      22: "Expected conversion to base64 encoding",
+      23: "Expected conversion to base16 encoding",
+      24: "Encoded CBOR data item (Byte String)",
+      32: "URI (Uniform Resource Identifier)",
+      33: "base64url",
+      34: "base64",
+      36: "MIME message",
+      55799: "Self-Describe CBOR (Magic Number)",
+    };
+
+    monaco.languages.registerHoverProvider("cbor-edn", {
+      provideHover: function (model, position) {
+        const word = model.getWordAtPosition(position);
+        if (!word) return null;
+
+        const text = word.word;
+        const range = new monaco.Range(
+          position.lineNumber,
+          word.startColumn,
+          position.lineNumber,
+          word.endColumn,
+        );
+        const contents = [];
+        const nextCharRange = new monaco.Range(
+          position.lineNumber,
+          word.endColumn,
+          position.lineNumber,
+          word.endColumn + 1,
+        );
+        const nextChar = model.getValueInRange(nextCharRange);
+
+        if (nextChar === "(" && /^\d+$/.test(text)) {
+          const tagId = parseInt(text);
+          if (CBOR_TAGS[tagId]) {
+            contents.push({ value: `**CBOR Tag ${tagId}**` });
+            contents.push({ value: `${CBOR_TAGS[tagId]}` });
+          } else {
+            contents.push({ value: `**CBOR Tag ${tagId}**` });
+            contents.push({ value: `(Unbekannter oder proprietärer Tag)` });
+          }
+        }
+
+        if (text.startsWith("0x") || text.startsWith("0X")) {
+          const dec = parseInt(text, 16);
+          if (!isNaN(dec)) contents.push({ value: `Decimal: **${dec}**` });
+        } else if (text.startsWith("0b") || text.startsWith("0B")) {
+          const val = text.substring(2);
+          const dec = parseInt(val, 2);
+          if (!isNaN(dec)) contents.push({ value: `Decimal: **${dec}**` });
+        } else if (text.startsWith("0o") || text.startsWith("0O")) {
+          const val = text.substring(2);
+          const dec = parseInt(val, 8);
+          if (!isNaN(dec)) contents.push({ value: `Decimal: **${dec}**` });
+        }
+        if (contents.length === 0) return null;
+
+        return {
+          range: range,
+          contents: contents,
+        };
+      },
+    });
+
+    function formatEdn(text) {
+      const output = [];
+      let indentLevel = 0;
+      const indent = "  ";
+      let inString = false;
+
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+
+        if ((char === '"' || char === "'") && text[i - 1] !== "\\") {
+          inString = !inString;
+        }
+
+        if (inString) {
+          output.push(char);
+          continue;
+        }
+
+        if (/\s/.test(char)) {
+          continue;
+        }
+
+        switch (char) {
+          case "{":
+          case "[":
+            indentLevel++;
+            output.push(char + "\n" + indent.repeat(indentLevel));
+            break;
+
+          case "}":
+          case "]":
+            indentLevel = Math.max(0, indentLevel - 1);
+            if (output.length > 0 && output[output.length - 1] !== "\n") {
+              output.push("\n" + indent.repeat(indentLevel) + char);
+            } else {
+              output.push(indent.repeat(indentLevel) + char);
+            }
+            break;
+
+          case ",":
+            output.push(char + "\n" + indent.repeat(indentLevel));
+            break;
+
+          case ":":
+            output.push(": ");
+            break;
+
+          default:
+            output.push(char);
+            break;
+        }
+      }
+      return output.join("").trim();
+    }
+
     const editor = monaco.editor.create(
       document.getElementById("editor-part"),
       {
@@ -62,7 +188,7 @@
         language: "cbor-edn",
         theme: "cbor-theme",
         automaticLayout: true,
-        minimap: { enabled: false },
+        minimap: { enabled: true },
         scrollBeyondLastLine: false,
       },
     );
@@ -125,6 +251,15 @@
           break;
 
         case "getEdnText":
+          let val = editor.getValue();
+
+          if (message.body.format === true) {
+            val = formatEdn(val);
+            const oldEditable = isEditable;
+            isEditable = false;
+            editor.setValue(val);
+            isEditable = oldEditable;
+          }
           vscode.postMessage({
             type: "response",
             requestId: message.requestId,

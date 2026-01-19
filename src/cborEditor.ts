@@ -9,8 +9,7 @@ import { parseCborEdn } from "./CborParser";
  * Define the type of edits used in paw draw files.
  */
 interface CborEdit {
-  readonly color: string;
-  readonly stroke: ReadonlyArray<[number, number]>;
+  readonly text: string;
 }
 
 interface CborDocumentDelegate {
@@ -116,23 +115,11 @@ class CborDocument extends Disposable implements vscode.CustomDocument {
    *
    * This fires an event to notify VS Code that the document has been edited.
    */
-  makeEdit(edit: CborEdit) {
-    this._edits.push(edit);
-
+  makeEdit(newText: string) {
     this._onDidChange.fire({
-      label: "Stroke",
-      undo: async () => {
-        this._edits.pop();
-        this._onDidChangeDocument.fire({
-          edits: this._edits,
-        });
-      },
-      redo: async () => {
-        this._edits.push(edit);
-        this._onDidChangeDocument.fire({
-          edits: this._edits,
-        });
-      },
+      label: "Edit",
+      undo: async () => {},
+      redo: async () => {},
     });
   }
 
@@ -380,14 +367,14 @@ export class CborEditorProvider
             throw new Error("Could not find webview to save for");
           }
           const panel = webviewsForDocument[0];
+          const fspath = destination.fsPath.toLowerCase();
+          const isCborDestination = fspath.endsWith(".cbor");
+          const isEdnDestination = fspath.endsWith(".edn");
 
           const ednText = await this.postMessageWithResponse<string>(
             panel,
             "getEdnText",
-            {},
-          );
-          console.log(
-            `--- [DEBUG] Empfangener Text (${ednText.length} chars):`,
+            { format: isCborDestination || isEdnDestination },
           );
 
           const result = parseCborEdn(ednText);
@@ -395,50 +382,38 @@ export class CborEditorProvider
             result.lexErrors.length > 0 || result.parseErrors.length > 0;
 
           if (hasErrors) {
-            const firstError = result.lexErrors[0] || result.parseErrors[0];
-            const msg = `Kann nicht speichern (Syntaxfehler): ${firstError.message}`;
-            console.error("--- [DEBUG] PARSER ERROR:", msg);
-            vscode.window.showErrorMessage(msg);
-            throw new Error(msg);
+            if (isCborDestination || isEdnDestination) {
+              const firstError = result.lexErrors[0] || result.parseErrors[0];
+              const msg = `Speichern fehlgeschlagen (Syntaxfehler): ${firstError.message}`;
+              console.error("--- [DEBUG] SAVE BLOCKED:", msg);
+
+              vscode.window.showErrorMessage(msg);
+              throw new Error(msg);
+            }
+            console.log("--- [DEBUG] Backup trotz Fehler erstellt.");
+            return new TextEncoder().encode(ednText);
           }
+
           console.log("--- [DEBUG] Parser erfolgreich (Validierung OK).");
 
-          const isEdnDestination = destination.fsPath
-            .toLowerCase()
-            .endsWith(".edn");
-
-          if (isEdnDestination) {
-            console.log("--- [DEBUG] Speichere als EDN Text.");
-
-            return new TextEncoder().encode(ednText);
-          } else {
+          if (isCborDestination) {
             console.log("--- [DEBUG] Speichere als CBOR Binär.");
             const value = result.value;
 
             try {
-              try {
-                const jsonPreview = JSON.stringify(value, null, 2);
-              } catch (e) {}
-
               console.log("--- [DEBUG] Starte cbor.encode...");
               const cborBytes = cbor.encode(value);
-
-              console.log(
-                `--- [DEBUG] Encoding fertig. Bytes: ${cborBytes.length}`,
-              );
-              console.log(
-                "--- [DEBUG] Hex:",
-                cborBytes.toString("hex").slice(0, 100),
-              );
-
               return new Uint8Array(cborBytes);
             } catch (e: any) {
               console.error("--- [DEBUG] ENCODING CRASH:", e);
               vscode.window.showErrorMessage(
                 "Fehler beim Kodieren: " + e.message,
               );
-              return document.documentData;
+              throw e;
             }
+          } else {
+            console.log("--- [DEBUG] Speichere als EDN Text.");
+            return new TextEncoder().encode(ednText);
           }
         },
       },
@@ -831,11 +806,7 @@ export class CborEditorProvider
       case "contentChange": {
         const text: string = message.text;
         this.updateDiagnostics(document.uri, text);
-        return;
-      }
-
-      case "stroke": {
-        document.makeEdit(message as CborEdit);
+        document.makeEdit(text);
         return;
       }
 
