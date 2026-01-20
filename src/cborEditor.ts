@@ -4,6 +4,7 @@ import { Disposable, disposeAll } from "./dispose";
 import { getNonce } from "./util";
 import * as cbor from "cbor";
 import { parseCborEdn } from "./CborParser";
+import { decode, diagnose, encode } from "cbor2";
 
 /**
  * Define the type of edits used in paw draw files.
@@ -444,9 +445,10 @@ export class CborEditorProvider
     _token: vscode.CancellationToken,
   ): Promise<void> {
     console.log(
-      "--- DEBUG: resolveCustomEditor gestartet für",
+      "--- DEBUG: resolveCustomEditor gestartet",
       document.uri.toString(),
     );
+
     this.webviews.add(document.uri, webviewPanel);
     webviewPanel.webview.options = { enableScripts: true };
     webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview);
@@ -466,7 +468,6 @@ export class CborEditorProvider
 
           if (isEdnFile) {
             const textContent = new TextDecoder().decode(document.documentData);
-
             this.postMessage(webviewPanel, "init", {
               value: textContent,
               editable,
@@ -474,7 +475,6 @@ export class CborEditorProvider
 
             try {
               const result = parseCborEdn(textContent);
-
               if (
                 result.lexErrors.length === 0 &&
                 result.parseErrors.length === 0
@@ -486,39 +486,31 @@ export class CborEditorProvider
                 });
               }
             } catch (err) {
-              console.error(
-                "Fehler beim Generieren der Hex-View für EDN:",
-                err,
-              );
+              console.error("Hex-View Fehler:", err);
             }
           } else {
-            cbor
-              .diagnose(document.documentData)
-              .then(async (text) => {
-                let formattedText = this.prettyPrintEDN(text);
-                this.postMessage(webviewPanel, "init", {
-                  value: formattedText,
-                  editable,
-                });
+            try {
+              const text = diagnose(document.documentData);
+              const formattedText = this.prettyPrintEDN(text);
 
-                try {
-                  const hexString = await cbor.Commented.comment(
-                    document.documentData,
-                  );
+              this.postMessage(webviewPanel, "init", {
+                value: formattedText,
+                editable,
+              });
+              cbor.Commented.comment(document.documentData)
+                .then((hexString) => {
                   this.postMessage(webviewPanel, "updateHex", {
                     text: hexString,
                   });
-                } catch (err) {
-                  console.error("Konnte Hex-View nicht laden:", err);
-                }
-              })
-              .catch((err) => {
-                console.error("Diagnose failed", err);
-                this.postMessage(webviewPanel, "init", {
-                  value: "Fehler beim Lesen der CBOR Datei: " + err.message,
-                  editable: false,
-                });
+                })
+                .catch((err) => console.error("Hex Fehler:", err));
+            } catch (err: any) {
+              console.error("Diagnose failed", err);
+              this.postMessage(webviewPanel, "init", {
+                value: "Fehler: " + err.message,
+                editable: false,
               });
+            }
           }
         }
       } else {
