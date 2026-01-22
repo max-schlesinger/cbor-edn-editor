@@ -1,15 +1,15 @@
 {
-  "name": "vscode-scitt-preview",
-  "icon": "docs/product-logo.png",
-  "displayName": "SCITT Preview",
-  "description": "CBOR Extended Diagnostic Notation (EDN) for SCITT",
+  "name": "cbor-edn-editor",
+  "icon": "docs/icon.png",
+  "displayName": "CBOR EDN Editor",
+  "description": "An extension that converts CBOR files into EDN, making them readable and editable.",
   "version": "0.0.1",
-  "publisher": "Transmute",
-  "private": true,
+  "publisher": "max-schlesinger",
+  "private": false,
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/transmute-industries/vscode-scitt-preview"
+    "url": "https://github.com/max-schlesinger/cbor-edn-editor"
   },
   "engines": {
     "vscode": "^1.74.0"
@@ -22,7 +22,7 @@
   "contributes": {
     "customEditors": [
       {
-        "viewType": "cbor-tools.cbor",
+        "viewType": "cbor-edn-editor.cbor",
         "displayName": "CBOR EDN Editor",
         "selector": [
           {
@@ -37,18 +37,18 @@
     ],
     "commands": [
       {
-        "command": "cbor-tools.Cbor.new",
+        "command": "cbor-edn-editor.Cbor.new",
         "title": "Create new CBOR Document",
         "category": "CBOR"
       },
       {
-        "command": "cbor-tools.saveAsEdn",
+        "command": "cbor-edn-editor.saveAsEdn",
         "title": "Export as EDN",
         "category": "CBOR",
         "icon": "$(file-code)"
       },
       {
-        "command": "cbor-tools.saveAsCbor",
+        "command": "cbor-edn-editor.saveAsCbor",
         "title": "Export as CBOR",
         "category": "CBOR",
         "icon": "$(file-binary)"
@@ -57,14 +57,14 @@
     "menus": {
       "editor/title": [
         {
-          "command": "cbor-tools.saveAsEdn",
+          "command": "cbor-edn-editor.saveAsEdn",
           "group": "navigation",
-          "when": "activeCustomEditorId == 'cbor-tools.cbor' && resourceExtname == .cbor"
+          "when": "activeCustomEditorId == 'cbor-edn-editor.cbor' && resourceExtname == .cbor"
         },
         {
-          "command": "cbor-tools.saveAsCbor",
+          "command": "cbor-edn-editor.saveAsCbor",
           "group": "navigation",
-          "when": "activeCustomEditorId == 'cbor-tools.cbor' && resourceExtname == .edn"
+          "when": "activeCustomEditorId == 'cbor-edn-editor.cbor' && resourceExtname == .edn"
         }
       ]
     }

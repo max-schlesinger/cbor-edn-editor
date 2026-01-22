@@ -4,7 +4,7 @@ import { Disposable, disposeAll } from "./dispose";
 import { getNonce } from "./util";
 import * as cbor from "cbor";
 import { parseCborEdn } from "./CborParser";
-import { decode, diagnose, encode } from "cbor2";
+import { decode, diagnose, encode, comment, CommentOptions } from "cbor2";
 
 /**
  * Define the type of edits used in paw draw files.
@@ -204,7 +204,7 @@ export class CborEditorProvider
   implements vscode.CustomEditorProvider<CborDocument>
 {
   private static newCborFileId = 1;
-  private static readonly viewType = "cbor-tools.cbor";
+  private static readonly viewType = "cbor-edn-editor.cbor";
 
   private readonly webviews = new WebviewCollection();
   private readonly diagnostics: vscode.DiagnosticCollection;
@@ -213,7 +213,7 @@ export class CborEditorProvider
     this.diagnostics = vscode.languages.createDiagnosticCollection("cbor-edn");
     this._context.subscriptions.push(this.diagnostics);
     this._context.subscriptions.push(
-      vscode.commands.registerCommand("cbor-tools.saveAsEdn", async () => {
+      vscode.commands.registerCommand("cbor-edn-editor.saveAsEdn", async () => {
         const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
 
         if (!activeTab || !(activeTab.input instanceof vscode.TabInputCustom)) {
@@ -250,68 +250,69 @@ export class CborEditorProvider
 
             await vscode.workspace.fs.writeFile(saveUri, data);
 
-            vscode.window.showInformationMessage(
-              `Exportiert: ${saveUri.fsPath}`,
-            );
+            vscode.window.showInformationMessage(`Export: ${saveUri.fsPath}`);
           }
         } catch (e: any) {
           console.error(e);
-          vscode.window.showErrorMessage("Fehler: " + e.message);
+          vscode.window.showErrorMessage(e.message);
         }
       }),
     );
     this._context.subscriptions.push(
-      vscode.commands.registerCommand("cbor-tools.saveAsCbor", async () => {
-        const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
-        if (!activeTab || !(activeTab.input instanceof vscode.TabInputCustom)) {
-          return;
-        }
-        const uri = activeTab.input.uri;
-        const panels = Array.from(this.webviews.get(uri));
-        if (!panels.length) return;
-        const panel = panels[0];
-
-        try {
-          const ednText = await this.postMessageWithResponse<string>(
-            panel,
-            "getEdnText",
-            {},
-          );
-
-          const result = parseCborEdn(ednText);
-          if (result.lexErrors.length > 0 || result.parseErrors.length > 0) {
-            throw new Error(
-              "Syntaxfehler! Kann nicht als CBOR gespeichert werden.",
-            );
+      vscode.commands.registerCommand(
+        "cbor-edn-editor.saveAsCbor",
+        async () => {
+          const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+          if (
+            !activeTab ||
+            !(activeTab.input instanceof vscode.TabInputCustom)
+          ) {
+            return;
           }
+          const uri = activeTab.input.uri;
+          const panels = Array.from(this.webviews.get(uri));
+          if (!panels.length) return;
+          const panel = panels[0];
 
-          const cborBytes = cbor.encode(result.value);
-
-          const saveUri = await vscode.window.showSaveDialog({
-            defaultUri: uri.with({
-              path: uri.path.replace(/\.(edn|txt)$/, ".cbor"),
-            }),
-            filters: { "CBOR Binary": ["cbor"] },
-            saveLabel: "Export CBOR",
-          });
-
-          if (saveUri) {
-            await vscode.workspace.fs.writeFile(saveUri, cborBytes);
-            vscode.window.showInformationMessage(
-              `Exportiert als CBOR: ${saveUri.fsPath}`,
+          try {
+            const ednText = await this.postMessageWithResponse<string>(
+              panel,
+              "getEdnText",
+              {},
             );
+
+            const result = parseCborEdn(ednText);
+            if (result.lexErrors.length > 0 || result.parseErrors.length > 0) {
+              throw new Error("cannot save as CBOR.");
+            }
+
+            const cborBytes = encode(result.value);
+
+            const saveUri = await vscode.window.showSaveDialog({
+              defaultUri: uri.with({
+                path: uri.path.replace(/\.(edn|txt)$/, ".cbor"),
+              }),
+              filters: { "CBOR Binary": ["cbor"] },
+              saveLabel: "Export CBOR",
+            });
+
+            if (saveUri) {
+              await vscode.workspace.fs.writeFile(saveUri, cborBytes);
+              vscode.window.showInformationMessage(
+                `Export as CBOR: ${saveUri.fsPath}`,
+              );
+            }
+          } catch (e: any) {
+            vscode.window.showErrorMessage(e.message);
           }
-        } catch (e: any) {
-          vscode.window.showErrorMessage("Fehler: " + e.message);
-        }
-      }),
+        },
+      ),
     );
   }
 
   public static register(context: vscode.ExtensionContext): vscode.Disposable {
-    console.log("CborEditorProvider.register: called");
-    vscode.commands.registerCommand("cbor-tools.Cbor.new", () => {
-      console.log("cbor-tools.Cbor.new command executed");
+    vscode.commands.registerCommand("cbor-edn-editor.Cbor.new", () => {
+      console.log("cbor-edn-editor.Cbor.new command executed");
       const workspaceFolders = vscode.workspace.workspaceFolders;
       if (!workspaceFolders) {
         vscode.window.showErrorMessage(
@@ -357,14 +358,10 @@ export class CborEditorProvider
       openContext.backupId,
       {
         getFileData: async (destination: vscode.Uri) => {
-          console.log("\n--- [DEBUG] START SAVING ---");
-          console.log("--- [DEBUG] Ziel-Datei:", destination.fsPath);
-
           const webviewsForDocument = Array.from(
             this.webviews.get(document.uri),
           );
           if (!webviewsForDocument.length) {
-            console.error("--- [DEBUG] ERROR: Keine Webview gefunden");
             throw new Error("Could not find webview to save for");
           }
           const panel = webviewsForDocument[0];
@@ -385,35 +382,27 @@ export class CborEditorProvider
           if (hasErrors) {
             if (isCborDestination || isEdnDestination) {
               const firstError = result.lexErrors[0] || result.parseErrors[0];
-              const msg = `Speichern fehlgeschlagen (Syntaxfehler): ${firstError.message}`;
-              console.error("--- [DEBUG] SAVE BLOCKED:", msg);
+              const msg = `${firstError.message}`;
+              console.error(msg);
 
               vscode.window.showErrorMessage(msg);
               throw new Error(msg);
             }
-            console.log("--- [DEBUG] Backup trotz Fehler erstellt.");
             return new TextEncoder().encode(ednText);
           }
 
-          console.log("--- [DEBUG] Parser erfolgreich (Validierung OK).");
-
           if (isCborDestination) {
-            console.log("--- [DEBUG] Speichere als CBOR Binär.");
             const value = result.value;
 
             try {
-              console.log("--- [DEBUG] Starte cbor.encode...");
-              const cborBytes = cbor.encode(value);
+              const cborBytes = encode(value);
               return new Uint8Array(cborBytes);
             } catch (e: any) {
-              console.error("--- [DEBUG] ENCODING CRASH:", e);
-              vscode.window.showErrorMessage(
-                "Fehler beim Kodieren: " + e.message,
-              );
+              console.error(e);
+              vscode.window.showErrorMessage(e.message);
               throw e;
             }
           } else {
-            console.log("--- [DEBUG] Speichere als EDN Text.");
             return new TextEncoder().encode(ednText);
           }
         },
@@ -444,10 +433,7 @@ export class CborEditorProvider
     webviewPanel: vscode.WebviewPanel,
     _token: vscode.CancellationToken,
   ): Promise<void> {
-    console.log(
-      "--- DEBUG: resolveCustomEditor gestartet",
-      document.uri.toString(),
-    );
+    console.log(document.uri.toString());
 
     this.webviews.add(document.uri, webviewPanel);
     webviewPanel.webview.options = { enableScripts: true };
@@ -479,14 +465,14 @@ export class CborEditorProvider
                 result.lexErrors.length === 0 &&
                 result.parseErrors.length === 0
               ) {
-                const buffer = cbor.encode(result.value);
+                const buffer = encode(result.value);
                 const hexString = await cbor.Commented.comment(buffer);
                 this.postMessage(webviewPanel, "updateHex", {
                   text: hexString,
                 });
               }
             } catch (err) {
-              console.error("Hex-View Fehler:", err);
+              console.error(err);
             }
           } else {
             try {
@@ -503,11 +489,11 @@ export class CborEditorProvider
                     text: hexString,
                   });
                 })
-                .catch((err) => console.error("Hex Fehler:", err));
+                .catch((err) => console.error(err));
             } catch (err: any) {
-              console.error("Diagnose failed", err);
+              console.error(err);
               this.postMessage(webviewPanel, "init", {
-                value: "Fehler: " + err.message,
+                value: err.message,
                 editable: false,
               });
             }
@@ -641,13 +627,13 @@ export class CborEditorProvider
 
     if (result.lexErrors.length === 0 && result.parseErrors.length === 0) {
       try {
-        const buffer = cbor.encode(result.value);
+        const buffer = encode(result.value);
         const hexString = await cbor.Commented.comment(buffer);
         for (const panel of this.webviews.get(uri)) {
           this.postMessage(panel, "updateHex", { text: hexString });
         }
       } catch (e) {
-        console.error("Hex-View Update fehlgeschlagen:", e);
+        console.error(e);
       }
     }
   }
