@@ -1,5 +1,6 @@
 import { createToken, Lexer, CstParser, tokenMatcher } from "chevrotain";
 import * as cbor from "cbor";
+import { Tag, Simple, encodedNumber } from "cbor2";
 
 const Comment = createToken({
   name: "Comment",
@@ -356,7 +357,7 @@ export class CborVisitor extends BaseCborVisitor {
     }
 
     const content = this.visit(ctx.value);
-    return new cbor.Tagged(tagNumber, content);
+    return new Tag(tagNumber, content);
   }
 
   annotated_string(ctx: any) {
@@ -391,32 +392,75 @@ export class CborVisitor extends BaseCborVisitor {
   annotated_number(ctx: any) {
     const cleanSign = (str: string) =>
       str.startsWith("+") ? str.slice(1) : str;
-    if (ctx.HexInt) {
-      return parseInt(cleanSign(ctx.HexInt[0].image), 16);
-    }
-    if (ctx.OctInt) {
-      const raw = cleanSign(ctx.OctInt[0].image);
-      return parseInt(raw.replace("0o", ""), 8);
-    }
-    if (ctx.BinInt) {
-      const raw = cleanSign(ctx.BinInt[0].image);
-      return parseInt(raw.replace("0b", ""), 2);
-    }
-    if (ctx.HexFloat) {
-      return parseFloat(cleanSign(ctx.HexFloat[0].image));
-    }
-    if (ctx.Number) {
-      let raw = ctx.Number[0].image;
-      raw = raw.replace(/_\d+$/, "");
-      const cleanNumberString = raw.replace(/_/g, "");
-      return Number(cleanNumberString);
-    }
-    if (ctx.NonFin) {
-      return Number(ctx.NonFin[0].image);
-    }
-    return NaN;
-  }
 
+    let val: number | bigint | null = null;
+    let isFloat = false;
+
+    if (ctx.HexFloat) {
+      const raw = cleanSign(ctx.HexFloat[0].image);
+      val = Number(raw);
+
+      if (ctx.HexFloat[0].image.trim().startsWith("-")) val = -Math.abs(val);
+      isFloat = true;
+    } else if (ctx.HexInt) {
+      let text = ctx.HexInt[0].image;
+      const isNeg = text.trim().startsWith("-");
+      text = text.replace(/^[+\-]/, "");
+      val = BigInt(text);
+      if (isNeg) val = -val;
+    } else if (ctx.OctInt) {
+      let text = ctx.OctInt[0].image;
+      const isNeg = text.trim().startsWith("-");
+      text = text.replace(/^[+\-]/, "").replace("0o", "");
+      val = BigInt("0o" + text);
+      if (isNeg) val = -val;
+    } else if (ctx.BinInt) {
+      let text = ctx.BinInt[0].image;
+      const isNeg = text.trim().startsWith("-");
+      text = text.replace(/^[+\-]/, "").replace("0b", "");
+      val = BigInt("0b" + text);
+      if (isNeg) val = -val;
+    } else if (ctx.Number) {
+      let raw = ctx.Number[0].image.replace(/_\d+$/, "").replace(/_/g, "");
+      if (/[.eE]/.test(raw)) {
+        val = Number(raw);
+        isFloat = true;
+      } else {
+        val = BigInt(raw);
+      }
+    } else if (ctx.NonFin) {
+      val = Number(ctx.NonFin[0].image);
+      isFloat = true;
+    }
+
+    if (ctx.Spec && val !== null) {
+      const spec = ctx.Spec[0].image;
+
+      if (isFloat) {
+        const numVal = Number(val);
+
+        if (spec === "_1") return encodedNumber(numVal, "f16");
+        if (spec === "_2") return encodedNumber(numVal, "f32");
+        if (spec === "_3") return encodedNumber(numVal, "f64");
+      } else {
+        let numVal = val;
+        if (
+          typeof val === "bigint" &&
+          val <= Number.MAX_SAFE_INTEGER &&
+          val >= Number.MIN_SAFE_INTEGER
+        ) {
+          numVal = Number(val);
+        }
+
+        if (spec === "_0") return encodedNumber(numVal, "i8");
+        if (spec === "_1") return encodedNumber(numVal, "i16");
+        if (spec === "_2") return encodedNumber(numVal, "i32");
+        if (spec === "_3") return encodedNumber(numVal, "i64");
+      }
+    }
+
+    return val;
+  }
   string_concatenation(ctx: any) {
     return ctx.annotated_string.map((child: any) => this.visit(child)).join("");
   }
@@ -438,10 +482,10 @@ export class CborVisitor extends BaseCborVisitor {
   }
   simple_value(ctx: any) {
     if (!ctx.Number || ctx.Number.length === 0) {
-      return new cbor.Simple(0);
+      return new Simple(0);
     }
     const val = Number(ctx.Number[0].image);
-    return new cbor.Simple(val);
+    return new Simple(val);
   }
 }
 
