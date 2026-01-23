@@ -1,5 +1,4 @@
 import { createToken, Lexer, CstParser, tokenMatcher } from "chevrotain";
-import * as cbor from "cbor";
 import { Tag, Simple, encodedNumber } from "cbor2";
 
 const Comment = createToken({
@@ -107,6 +106,24 @@ const allTokens = [
   NumberLiteral,
   Plus,
 ];
+
+function parseHexFloat(text: string): number {
+  const clean = text.toLowerCase().replace(/_/g, "");
+  const sign = clean.startsWith("-") ? -1 : 1;
+  const withoutSign = clean.replace(/^[+-]/, "");
+
+  const [mantissaStr, expStr] = withoutSign.split("p");
+  const exponent = expStr ? parseInt(expStr, 10) : 0;
+  const parts = mantissaStr.replace("0x", "").split(".");
+
+  let value = parseInt(parts[0], 16);
+
+  if (parts.length > 1 && parts[1].length > 0) {
+    value += parseInt(parts[1], 16) / Math.pow(16, parts[1].length);
+  }
+
+  return sign * value * Math.pow(2, exponent);
+}
 
 export const CborLexer = new Lexer(allTokens);
 
@@ -361,61 +378,70 @@ export class CborVisitor extends BaseCborVisitor {
   }
 
   annotated_string(ctx: any) {
-    if (ctx.Ellipsis) return "...";
+    if (ctx.Ellipsis) return undefined;
+
+    const toU8 = (buf: Buffer): Uint8Array => {
+      return new Uint8Array([...buf]);
+    };
+
     if (ctx.String) {
       const raw = ctx.String[0].image;
-      if (raw.startsWith("'")) {
-        let content = raw.slice(1, -1);
-        content = content.replace(/\\'/g, "'");
-        content = content.replace(/"/g, '\\"');
-        return JSON.parse(`"${content}"`);
+      const isSingleQuote = raw.trim().startsWith("'");
+
+      try {
+        const cleanRaw = raw.replace(/\r?\n/g, "\\n");
+        const value = new Function("return " + cleanRaw)();
+
+        if (isSingleQuote) {
+          return toU8(Buffer.from(value, "utf-8"));
+        }
+        return value;
+      } catch (e) {
+        return raw.slice(1, -1);
       }
-      return JSON.parse(raw);
     }
+
     if (ctx.HexBytes) {
       const hex = ctx.HexBytes[0].image.slice(2, -1).replace(/\s/g, "");
-      return Buffer.from(hex, "hex");
+
+      return toU8(Buffer.from(hex, "hex"));
     }
+
     if (ctx.B64Bytes) {
-      const b64 = ctx.B64Bytes[0].image.slice(4, -1).replace(/\s/g, "");
-      return Buffer.from(b64, "base64");
+      let b64 = ctx.B64Bytes[0].image.slice(4, -1).replace(/\s/g, "");
+      if (b64.startsWith("'") || b64.startsWith('"')) b64 = b64.slice(1, -1);
+
+      return toU8(Buffer.from(b64, "base64"));
     }
+
     if (ctx.AppString) {
       return ctx.AppString[0].image;
     }
-    if (ctx.embedded) {
-      return this.visit(ctx.embedded);
-    }
+    if (ctx.embedded) return this.visit(ctx.embedded);
     return "";
   }
-
   annotated_number(ctx: any) {
-    const cleanSign = (str: string) =>
-      str.startsWith("+") ? str.slice(1) : str;
-
     let val: number | bigint | null = null;
     let isFloat = false;
 
     if (ctx.HexFloat) {
-      const raw = cleanSign(ctx.HexFloat[0].image);
-      val = Number(raw);
-
+      val = parseHexFloat(ctx.HexFloat[0].image);
       if (ctx.HexFloat[0].image.trim().startsWith("-")) val = -Math.abs(val);
       isFloat = true;
     } else if (ctx.HexInt) {
-      let text = ctx.HexInt[0].image;
+      let text = ctx.HexInt[0].image.replace(/_/g, "");
       const isNeg = text.trim().startsWith("-");
       text = text.replace(/^[+\-]/, "");
       val = BigInt(text);
       if (isNeg) val = -val;
     } else if (ctx.OctInt) {
-      let text = ctx.OctInt[0].image;
+      let text = ctx.OctInt[0].image.replace(/_/g, "");
       const isNeg = text.trim().startsWith("-");
       text = text.replace(/^[+\-]/, "").replace("0o", "");
       val = BigInt("0o" + text);
       if (isNeg) val = -val;
     } else if (ctx.BinInt) {
-      let text = ctx.BinInt[0].image;
+      let text = ctx.BinInt[0].image.replace(/_/g, "");
       const isNeg = text.trim().startsWith("-");
       text = text.replace(/^[+\-]/, "").replace("0b", "");
       val = BigInt("0b" + text);
@@ -432,13 +458,10 @@ export class CborVisitor extends BaseCborVisitor {
       val = Number(ctx.NonFin[0].image);
       isFloat = true;
     }
-
     if (ctx.Spec && val !== null) {
       const spec = ctx.Spec[0].image;
-
       if (isFloat) {
         const numVal = Number(val);
-
         if (spec === "_1") return encodedNumber(numVal, "f16");
         if (spec === "_2") return encodedNumber(numVal, "f32");
         if (spec === "_3") return encodedNumber(numVal, "f64");
@@ -448,10 +471,8 @@ export class CborVisitor extends BaseCborVisitor {
           typeof val === "bigint" &&
           val <= Number.MAX_SAFE_INTEGER &&
           val >= Number.MIN_SAFE_INTEGER
-        ) {
+        )
           numVal = Number(val);
-        }
-
         if (spec === "_0") return encodedNumber(numVal, "i8");
         if (spec === "_1") return encodedNumber(numVal, "i16");
         if (spec === "_2") return encodedNumber(numVal, "i32");
@@ -459,10 +480,35 @@ export class CborVisitor extends BaseCborVisitor {
       }
     }
 
+    if (isFloat && val !== null) {
+      const num = Number(val);
+      if (Object.is(num, -0)) return num;
+      if (Number.isInteger(num)) {
+        return encodedNumber(num, "f64");
+      }
+      return num;
+    }
+
     return val;
   }
   string_concatenation(ctx: any) {
-    return ctx.annotated_string.map((child: any) => this.visit(child)).join("");
+    const parts = ctx.annotated_string.map((child: any) => this.visit(child));
+
+    if (parts.length === 1) return parts[0];
+
+    if (parts.every((p: any) => typeof p === "string")) {
+      return parts.join("");
+    }
+
+    const buffers = parts.map((p: any) => {
+      if (p instanceof Uint8Array) return Buffer.from(p);
+      if (Buffer.isBuffer(p)) return p;
+      if (typeof p === "string") return Buffer.from(p, "utf-8");
+      return Buffer.alloc(0);
+    });
+
+    const buf = Buffer.concat(buffers);
+    return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
   }
 
   streamstring(ctx: any) {

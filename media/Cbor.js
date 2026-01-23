@@ -30,7 +30,7 @@
           // Keywords / Booleans
           [/\b(true|false|null|undefined)\b/, "keyword"],
 
-          // Klammern und Trennzeichen
+          // Klammern/Trennzeichen
           [/[{}]/, "delimiter.bracket"],
           [/[\[\]]/, "delimiter.array"],
           [/[,]/, "delimiter.comma"],
@@ -101,7 +101,7 @@
             contents.push({ value: `${CBOR_TAGS[tagId]}` });
           } else {
             contents.push({ value: `**CBOR Tag ${tagId}**` });
-            contents.push({ value: `(Unbekannter oder proprietärer Tag)` });
+            contents.push({ value: `(unknown Tag)` });
           }
         }
 
@@ -215,7 +215,7 @@
             ]);
           })
           .catch((err) => {
-            console.error("Paste fehlgeschlagen:", err);
+            console.error(err);
           });
       }
     });
@@ -233,7 +233,6 @@
 
     window.addEventListener("message", (event) => {
       const message = event.data;
-      console.log("LOG C: Nachricht im Frontend:", message.type);
       switch (message.type) {
         case "init":
           isEditable = false;
@@ -275,7 +274,6 @@
           break;
 
         case "syntaxError":
-          console.log("Nachricht empfangen:", message);
           const rawMarkers = message.body.markers || [];
 
           const markers = rawMarkers.map((m) => {
@@ -298,7 +296,6 @@
           break;
       }
     });
-
     vscode.postMessage({ type: "ready" });
   });
 })();

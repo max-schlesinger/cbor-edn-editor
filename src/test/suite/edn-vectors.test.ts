@@ -19,7 +19,7 @@ suite("Official CBOR EDN Test Vectors", () => {
     const csvPath = path.join(vectorsDir, filename);
 
     if (!fs.existsSync(csvPath)) {
-      console.warn(`WARNUNG: ${filename} nicht gefunden in ${vectorsDir}`);
+      console.warn(`${filename} not found in ${vectorsDir}`);
       return;
     }
 
@@ -108,7 +108,7 @@ suite("Official CBOR EDN Test Vectors", () => {
                 if (outputField) {
                   const forbidden = Buffer.from(outputField, "hex");
                   if (Buffer.from(bytes).equals(forbidden)) {
-                    assert.fail("Input sollte NICHT diesen Bytes entsprechen!");
+                    assert.fail("The input should not be equal to these bytes");
                   }
                 }
               } catch (e) {
