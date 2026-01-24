@@ -392,7 +392,10 @@ export class CborEditorProvider
           }
 
           if (isCborDestination) {
-            const value = result.value;
+            let value = result.value;
+            if (Array.isArray(value) && value.length === 1) {
+              value = value[0];
+            }
 
             try {
               const cborBytes = encode(value);

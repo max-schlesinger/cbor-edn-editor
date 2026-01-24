@@ -253,7 +253,7 @@
           let val = editor.getValue();
 
           if (message.body.format === true) {
-            val = formatEdn(val);
+            //val = formatEdn(val);
             const oldEditable = isEditable;
             isEditable = false;
             editor.setValue(val);
