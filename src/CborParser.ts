@@ -1,5 +1,6 @@
 import { createToken, Lexer, CstParser, tokenMatcher } from "chevrotain";
 import { Tag, Simple, encodedNumber } from "cbor2";
+import * as ipaddr from "ipaddr.js";
 
 const Comment = createToken({
   name: "Comment",
@@ -378,20 +379,102 @@ export class CborVisitor extends BaseCborVisitor {
   }
 
   annotated_string(ctx: any) {
-    if (ctx.Ellipsis) return undefined;
+    if (ctx.Ellipsis) return new Tag(888, null);
 
-    const toU8 = (buf: Buffer): Uint8Array => {
-      return new Uint8Array([...buf]);
+    const toU8 = (buf: Buffer | number[]): Uint8Array => {
+      return new Uint8Array(buf);
     };
 
+    if (ctx.AppString) {
+      const rawImage = ctx.AppString[0].image;
+      const tickPos = rawImage.indexOf("'");
+      const prefix = rawImage.substring(0, tickPos);
+      const content = rawImage.substring(tickPos + 1, rawImage.length - 1);
+
+      if (prefix === "ip" || prefix === "IP") {
+        try {
+          let addr: ipaddr.IPv4 | ipaddr.IPv6;
+          let prefixLen: number | null = null;
+          let isCidr = false;
+
+          if (content.includes("/")) {
+            const cidr = ipaddr.parseCIDR(content);
+            addr = cidr[0];
+            prefixLen = cidr[1];
+            isCidr = true;
+          } else {
+            addr = ipaddr.parse(content);
+          }
+
+          let bytes = addr.toByteArray();
+
+          if (
+            addr.kind() === "ipv6" &&
+            (addr as ipaddr.IPv6).isIPv4MappedAddress()
+          ) {
+            if (
+              content.startsWith("::") &&
+              !content.toLowerCase().includes("ffff")
+            ) {
+              bytes[10] = 0;
+              bytes[11] = 0;
+            }
+          }
+          if (isCidr && prefixLen !== null) {
+            for (let i = 0; i < bytes.length; i++) {
+              const bitPos = i * 8;
+              if (bitPos >= prefixLen) {
+                bytes[i] = 0;
+              } else if (bitPos + 8 > prefixLen) {
+                const bitsToKeep = prefixLen - bitPos;
+                const mask = 0xff << (8 - bitsToKeep);
+                bytes[i] = bytes[i] & mask;
+              }
+            }
+          }
+
+          const isV4 = addr.kind() === "ipv4";
+          const tagNum = isV4 ? 52 : 54;
+
+          if (isCidr && prefixLen !== null) {
+            const buf = Buffer.from(bytes);
+            let trimLen = buf.length;
+            while (trimLen > 0 && buf[trimLen - 1] === 0) trimLen--;
+            const trimmedBytes = toU8(buf.subarray(0, trimLen));
+
+            const arrayStructure = [prefixLen, trimmedBytes];
+
+            if (prefix === "IP") {
+              return new Tag(tagNum, arrayStructure);
+            } else {
+              return arrayStructure;
+            }
+          }
+
+          if (prefix === "IP") {
+            return new Tag(tagNum, toU8(bytes));
+          } else {
+            return toU8(bytes);
+          }
+        } catch (e) {
+          return content;
+        }
+      }
+      if (prefix === "dt" || prefix === "DT") {
+        const date = new Date(content);
+        const timestamp = date.getTime() / 1000;
+
+        if (prefix === "dt") return timestamp;
+        if (prefix === "DT") return new Tag(1, timestamp);
+      }
+      return rawImage;
+    }
     if (ctx.String) {
       const raw = ctx.String[0].image;
       const isSingleQuote = raw.trim().startsWith("'");
-
       try {
         const cleanRaw = raw.replace(/\r?\n/g, "\\n");
         const value = new Function("return " + cleanRaw)();
-
         if (isSingleQuote) {
           return toU8(Buffer.from(value, "utf-8"));
         }
@@ -403,20 +486,15 @@ export class CborVisitor extends BaseCborVisitor {
 
     if (ctx.HexBytes) {
       const hex = ctx.HexBytes[0].image.slice(2, -1).replace(/\s/g, "");
-
       return toU8(Buffer.from(hex, "hex"));
     }
 
     if (ctx.B64Bytes) {
       let b64 = ctx.B64Bytes[0].image.slice(4, -1).replace(/\s/g, "");
       if (b64.startsWith("'") || b64.startsWith('"')) b64 = b64.slice(1, -1);
-
       return toU8(Buffer.from(b64, "base64"));
     }
 
-    if (ctx.AppString) {
-      return ctx.AppString[0].image;
-    }
     if (ctx.embedded) return this.visit(ctx.embedded);
     return "";
   }
@@ -495,6 +573,13 @@ export class CborVisitor extends BaseCborVisitor {
     const parts = ctx.annotated_string.map((child: any) => this.visit(child));
 
     if (parts.length === 1) return parts[0];
+    const hasEllipsis = parts.some(
+      (p: any) => p instanceof Tag && p.tag === 888,
+    );
+
+    if (hasEllipsis) {
+      return new Tag(888, parts);
+    }
 
     if (parts.every((p: any) => typeof p === "string")) {
       return parts.join("");
