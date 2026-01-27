@@ -11,11 +11,18 @@
     "type": "git",
     "url": "https://github.com/max-schlesinger/cbor-edn-editor"
   },
+  "bugs": {
+    "url": "https://github.com/max-schlesinger/cbor-edn-editor/issues"
+  },
   "engines": {
     "vscode": "^1.74.0"
   },
   "categories": [
     "Other"
+  ],
+  "extensionKind": [
+    "workspace",
+    "ui"
   ],
   "activationEvents": [],
   "main": "./out/extension.js",

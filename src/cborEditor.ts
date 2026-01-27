@@ -721,29 +721,37 @@ export class CborEditorProvider
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <link href="${styleMainUri}" rel="stylesheet" />
             <title>CBOR EDN Editor</title>
-            <style>
-                html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
-                #container { display: flex; width: 100%; height: 100%; }
+           <style>
+    html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
+    
+    #container { 
+        display: flex; 
+        width: 100%; 
+        height: 100%; 
+    }
 
-                #editor-part { 
-                    width: 60%;      
-                    height: 100%; 
-                    border-right: 1px solid var(--vscode-panel-border); 
-                }
+    #editor-part { 
+        flex: 1;              
+        height: 100%; 
+        border-right: 1px solid var(--vscode-panel-border); 
+        overflow: hidden;     
+        position: relative;  
+    }
 
-                #hex-part { 
-                    width: 40%;       
-                    height: 100%; 
-                    font-family: 'Consolas', 'Courier New', monospace;
-                    white-space: pre; 
-                    overflow: auto;   
-                    padding: 10px;
-                    box-sizing: border-box;                    
-                    background-color: var(--vscode-editor-background);
-                    color: var(--vscode-editor-foreground);
-                    font-size: var(--vscode-editor-font-size);
-                }
-            </style>
+    #hex-part { 
+        width: 400px;         
+        flex-shrink: 0;       
+        height: 100%; 
+        font-family: 'Consolas', 'Courier New', monospace;
+        white-space: pre; 
+        overflow: auto;   
+        padding: 10px;
+        box-sizing: border-box;                    
+        background-color: var(--vscode-editor-background);
+        color: var(--vscode-editor-foreground);
+        font-size: var(--vscode-editor-font-size);
+    }
+</style>
         </head>
         <body>
             <div id="container">
