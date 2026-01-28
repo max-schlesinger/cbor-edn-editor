@@ -611,7 +611,7 @@ export class CborEditorProvider
     if (result.lexErrors.length === 0 && result.parseErrors.length === 0) {
       try {
         const buffer = encode(result.value);
-        const hexString = await cbor.Commented.comment(buffer);
+        const hexString = get_annotated_hex(buffer);
         for (const panel of this.webviews.get(uri)) {
           this.postMessage(panel, "updateHex", { text: hexString });
         }
