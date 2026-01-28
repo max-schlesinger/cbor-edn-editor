@@ -24,9 +24,26 @@
     "workspace",
     "ui"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:cbor"
+  ],
   "main": "./out/extension.js",
   "contributes": {
+    "languages": [
+      {
+        "id": "cbor",
+        "aliases": [
+          "CBOR",
+          "cbor"
+        ],
+        "extensions": [
+          ".cbor"
+        ],
+        "mimetypes": [
+          "application/cbor"
+        ]
+      }
+    ],
     "customEditors": [
       {
         "viewType": "cbor-edn-editor.cbor",

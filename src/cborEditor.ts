@@ -204,7 +204,7 @@ export class CborEditorProvider
   implements vscode.CustomEditorProvider<CborDocument>
 {
   private static newCborFileId = 1;
-  private static readonly viewType = "cbor-edn-editor.cbor";
+  public static readonly viewType = "cbor-edn-editor.cbor";
 
   private readonly webviews = new WebviewCollection();
   private readonly diagnostics: vscode.DiagnosticCollection;
@@ -311,35 +311,10 @@ export class CborEditorProvider
   }
 
   public static register(context: vscode.ExtensionContext): vscode.Disposable {
-    vscode.commands.registerCommand("cbor-edn-editor.Cbor.new", () => {
-      console.log("cbor-edn-editor.Cbor.new command executed");
-      const workspaceFolders = vscode.workspace.workspaceFolders;
-      if (!workspaceFolders) {
-        vscode.window.showErrorMessage(
-          "Creating new Paw Draw files currently requires opening a workspace",
-        );
-        return;
-      }
-
-      const uri = vscode.Uri.joinPath(
-        workspaceFolders[0].uri,
-        `new-${CborEditorProvider.newCborFileId++}.cbor`,
-      ).with({ scheme: "untitled" });
-
-      vscode.commands.executeCommand(
-        "vscode.openWith",
-        uri,
-        CborEditorProvider.viewType,
-      );
-    });
-
     return vscode.window.registerCustomEditorProvider(
       CborEditorProvider.viewType,
       new CborEditorProvider(context),
       {
-        // For this demo extension, we enable `retainContextWhenHidden` which keeps the
-        // webview alive even when it is not visible. You should avoid using this setting
-        // unless is absolutely required as it does have memory overhead.
         webviewOptions: {
           retainContextWhenHidden: true,
         },
@@ -347,7 +322,6 @@ export class CborEditorProvider
       },
     );
   }
-
   async openCustomDocument(
     uri: vscode.Uri,
     openContext: { backupId?: string },
@@ -469,7 +443,7 @@ export class CborEditorProvider
                 result.parseErrors.length === 0
               ) {
                 const buffer = encode(result.value);
-                const hexString = await cbor.Commented.comment(buffer);
+                const hexString = await cbor.comment(buffer);
                 this.postMessage(webviewPanel, "updateHex", {
                   text: hexString,
                 });
