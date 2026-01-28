@@ -5,6 +5,7 @@ import { getNonce } from "./util";
 import * as cbor from "cbor";
 import { parseCborEdn } from "./CborParser";
 import { decode, diagnose, encode, comment, CommentOptions } from "cbor2";
+import { get_annotated_hex } from "wasm-cbor";
 
 /**
  * Define the type of edits used in paw draw files.
@@ -443,10 +444,14 @@ export class CborEditorProvider
                 result.parseErrors.length === 0
               ) {
                 const buffer = encode(result.value);
-                const hexString = await cbor.comment(buffer);
-                this.postMessage(webviewPanel, "updateHex", {
-                  text: hexString,
-                });
+                try {
+                  const hexString = get_annotated_hex(buffer);
+                  this.postMessage(webviewPanel, "updateHex", {
+                    text: hexString,
+                  });
+                } catch (wasmErr) {
+                  console.error(wasmErr);
+                }
               }
             } catch (err) {
               console.error(err);
@@ -460,13 +465,14 @@ export class CborEditorProvider
                 value: formattedText,
                 editable,
               });
-              cbor.Commented.comment(document.documentData)
-                .then((hexString) => {
-                  this.postMessage(webviewPanel, "updateHex", {
-                    text: hexString,
-                  });
-                })
-                .catch((err) => console.error(err));
+              try {
+                const hexString = get_annotated_hex(document.documentData);
+                this.postMessage(webviewPanel, "updateHex", {
+                  text: hexString,
+                });
+              } catch (wasmErr) {
+                console.error("Wasm Error:", wasmErr);
+              }
             } catch (err: any) {
               console.error(err);
               this.postMessage(webviewPanel, "init", {

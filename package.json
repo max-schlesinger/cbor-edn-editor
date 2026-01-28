@@ -96,6 +96,7 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "gen": "apg -i src/grammar.bnf -o src/grammar.js",
+    "build:wasm": "cd wasm-cbor && wasm-pack build --target nodejs",
     "compile": "npm run gen && tsc -p ./ && cp src/grammar.js out/grammar.js",
     "lint": "eslint \"src/**/*.ts\"",
     "watch": "npm run gen && tsc -watch -p ./",
@@ -125,6 +126,7 @@
     "cbor2": "^2.0.1",
     "chevrotain": "^11.1.0",
     "edn-data": "^1.1.2",
-    "ipaddr.js": "^2.3.0"
+    "ipaddr.js": "^2.3.0",
+    "wasm-cbor": "file:wasm-cbor/pkg"
   }
 }
