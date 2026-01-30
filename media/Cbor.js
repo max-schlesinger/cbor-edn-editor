@@ -11,6 +11,37 @@
   require(["vs/editor/editor.main"], function () {
     monaco.languages.register({ id: "cbor-edn" });
 
+    monaco.languages.setLanguageConfiguration("cbor-edn", {
+      comments: {
+        lineComment: "#",
+        blockComment: ["/", "/"],
+      },
+      brackets: [
+        ["{", "}"],
+        ["[", "]"],
+      ],
+      autoClosingPairs: [
+        { open: "{", close: "}" },
+        { open: "[", close: "]" },
+        { open: "(", close: ")" },
+        { open: '"', close: '"' },
+        { open: "'", close: "'" },
+      ],
+      surroundingPairs: [
+        { open: "{", close: "}" },
+        { open: "[", close: "]" },
+        { open: "(", close: ")" },
+        { open: '"', close: '"' },
+        { open: "'", close: "'" },
+      ],
+      folding: {
+        markers: {
+          start: new RegExp("^\\s*[\\{\\[]"),
+          end: new RegExp("[\\}\\]]$"),
+        },
+      },
+    });
+
     monaco.languages.setMonarchTokensProvider("cbor-edn", {
       tokenizer: {
         root: [
@@ -37,7 +68,12 @@
           [/[:]/, "delimiter.colon"],
 
           // Kommentare
-          [/\/\/.*$/, "comment"],
+          [/#.*$/, "comment"],
+          [/\//, "comment", "@comment"],
+        ],
+        comment: [
+          [/[^/]+/, "comment"],
+          [/\//, "comment", "@pop"],
         ],
       },
     });
