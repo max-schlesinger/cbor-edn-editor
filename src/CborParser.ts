@@ -1,6 +1,30 @@
-import { createToken, Lexer, CstParser, tokenMatcher } from "chevrotain";
+import {
+  createToken,
+  Lexer,
+  CstParser,
+  tokenMatcher,
+  IParserErrorMessageProvider,
+} from "chevrotain";
 import { Tag, Simple, encodedNumber } from "cbor2";
 import * as ipaddr from "ipaddr.js";
+
+const ErrorProvider: IParserErrorMessageProvider = {
+  buildMismatchTokenMessage: (options) => {
+    const expected = options.expected.LABEL || options.expected.name;
+    const actual = options.actual.image;
+    return `Expected ${expected} but found '${actual}'`; // the token did not match the expected token
+  },
+  buildNotAllInputParsedMessage: (options) => {
+    return `Could not parse the entire input. Unexpected character at the end: '${options.firstRedundant.image}'`; // parser finished but there are still more tokens left in the input
+  },
+  buildNoViableAltMessage: (options) => {
+    const actual = options.actual[0].image;
+    return `Unexpected input: '${actual}'. Expected a value, tag, or structure here.`; // none of the alternatives could be matched
+  },
+  buildEarlyExitMessage: (options) => {
+    return `Unexpected end of input. More data was expected.`; // finished the input but was expecting more tokens
+  },
+};
 
 const Comment = createToken({
   name: "Comment",
@@ -14,64 +38,104 @@ const WhiteSpace = createToken({
   group: Lexer.SKIPPED,
 });
 
-const LBrace = createToken({ name: "LBrace", pattern: /{/ });
-const RBrace = createToken({ name: "RBrace", pattern: /}/ });
-const LBracket = createToken({ name: "LBracket", pattern: /\[/ });
-const RBracket = createToken({ name: "RBracket", pattern: /]/ });
-const LParen = createToken({ name: "LParen", pattern: /\(/ });
-const RParen = createToken({ name: "RParen", pattern: /\)/ });
-const Colon = createToken({ name: "Colon", pattern: /:/ });
-const Comma = createToken({ name: "Comma", pattern: /,/ });
-const Plus = createToken({ name: "Plus", pattern: /\+/ });
+const LBrace = createToken({ name: "LBrace", pattern: /{/, label: "{" });
+const RBrace = createToken({ name: "RBrace", pattern: /}/, label: "}" });
+const LBracket = createToken({ name: "LBracket", pattern: /\[/, label: "[" });
+const RBracket = createToken({ name: "RBracket", pattern: /]/, label: "]" });
+const LParen = createToken({ name: "LParen", pattern: /\(/, label: "(" });
+const RParen = createToken({ name: "RParen", pattern: /\)/, label: ")" });
+const Colon = createToken({ name: "Colon", pattern: /:/, label: ":" });
+const Comma = createToken({ name: "Comma", pattern: /,/, label: "," });
+const Plus = createToken({ name: "Plus", pattern: /\+/, label: "+" });
 
-const StreamStart = createToken({ name: "StreamStart", pattern: /\(_/ });
-const EmbedStart = createToken({ name: "EmbedStart", pattern: /<</ });
-const EmbedEnd = createToken({ name: "EmbedEnd", pattern: />>/ });
+const StreamStart = createToken({
+  name: "StreamStart",
+  pattern: /\(_/,
+  label: "(_",
+});
+const EmbedStart = createToken({
+  name: "EmbedStart",
+  pattern: /<</,
+  label: "<<",
+});
+const EmbedEnd = createToken({ name: "EmbedEnd", pattern: />>/, label: ">>" });
 
-const True = createToken({ name: "True", pattern: /true/ });
-const False = createToken({ name: "False", pattern: /false/ });
-const Null = createToken({ name: "Null", pattern: /null/ });
-const Undefined = createToken({ name: "Undefined", pattern: /undefined/ });
+const True = createToken({ name: "True", pattern: /true/, label: "true" });
+const False = createToken({ name: "False", pattern: /false/, label: "false" });
+const Null = createToken({ name: "Null", pattern: /null/, label: "null" });
+const Undefined = createToken({
+  name: "Undefined",
+  pattern: /undefined/,
+  label: "undefined",
+});
 const SimpleKey = createToken({
   name: "SimpleKey",
   pattern: /simple(?=\s*\()/,
+  label: "simple value",
 });
 
 const HexBytes = createToken({
   name: "HexBytes",
   pattern: /h'[0-9a-fA-F\s]*'/,
+  label: "hex bytes h'...'",
 });
 const B64Bytes = createToken({
   name: "B64Bytes",
   pattern: /b64'[a-zA-Z0-9+/=\s]*'/,
+  label: "base64 bytes b64'...'",
 });
 const StringLiteral = createToken({
   name: "String",
   pattern: /"(?:[^\\"]|\\.)*"|'(?:[^\\']|\\.)*'/,
+  label: "text string",
 });
 
 const HexFloat = createToken({
   name: "HexFloat",
   pattern:
     /[+-]?0x(?:\.[0-9a-fA-F]+|[0-9a-fA-F]+(?:\.[0-9a-fA-F]*)?)[pP][+-]?[0-9]+/,
+  label: "hex float",
 });
-const HexInt = createToken({ name: "HexInt", pattern: /[+-]?0x[0-9a-fA-F]+/ });
-const BinInt = createToken({ name: "BinInt", pattern: /[+-]?0b[0-1]+/ });
-const OctInt = createToken({ name: "OctInt", pattern: /[+-]?0o[0-7]+/ });
+const HexInt = createToken({
+  name: "HexInt",
+  pattern: /[+-]?0x[0-9a-fA-F]+/,
+  label: "hex integer",
+});
+const BinInt = createToken({
+  name: "BinInt",
+  pattern: /[+-]?0b[0-1]+/,
+  label: "binary integer",
+});
+const OctInt = createToken({
+  name: "OctInt",
+  pattern: /[+-]?0o[0-7]+/,
+  label: "octal integer",
+});
 const NonFin = createToken({
   name: "NonFin",
   pattern: /Infinity|-Infinity|NaN/,
+  label: "Infinity or NaN",
 });
 const NumberLiteral = createToken({
   name: "Number",
   pattern:
     /[+-]?(?:(?:0|[1-9](?:_?[0-9]+)*)(?:\.(?:[0-9]+(?:_[0-9]+)*)?)?|\.[0-9]+(?:_[0-9]+)*)(?:[eE][+-]?[0-9]+(?:_[0-9]+)*)?/,
+  label: "number",
 });
-const Spec = createToken({ name: "Spec", pattern: /_[a-zA-Z0-9_]+/ });
-const Ellipsis = createToken({ name: "Ellipsis", pattern: /\.{3,}/ });
+const Spec = createToken({
+  name: "Spec",
+  pattern: /_[a-zA-Z0-9_]+/,
+  label: "type specification (_...)",
+});
+const Ellipsis = createToken({
+  name: "Ellipsis",
+  pattern: /\.{3,}/,
+  label: "ellipsis '...'",
+});
 const AppString = createToken({
   name: "AppString",
   pattern: /[a-zA-Z][a-zA-Z0-9]*'(?:[^\\']|\\.)*'/,
+  label: "application string (tag'...')",
 });
 
 const allTokens = [
@@ -145,6 +209,7 @@ export class CborParser extends CstParser {
   constructor() {
     super(allTokens, {
       recoveryEnabled: true,
+      errorMessageProvider: ErrorProvider,
     });
 
     this.cbor = this.RULE("cbor", () => {
