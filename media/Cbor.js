@@ -226,6 +226,20 @@
         automaticLayout: true,
         minimap: { enabled: true },
         scrollBeyondLastLine: false,
+        stickyScroll: {
+          enabled: true,
+        },
+        cursorBlinking: "smooth",
+        cursorSmoothCaretAnimation: "on",
+        guides: {
+          indentation: true, // Normale Einrückungslinien
+          bracketPairs: true, // Linien zwischen Klammerpaaren (neu & cool)
+          highlightActiveBracketPair: true, // Leuchtet auf, wenn Cursor im Block ist
+          highlightActiveIndentation: true,
+        },
+        bracketPairColorization: {
+          enabled: true,
+        },
       },
     );
 
