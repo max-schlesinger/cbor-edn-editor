@@ -40,6 +40,12 @@
           end: new RegExp("[\\}\\]]$"),
         },
       },
+      onEnterRules: [
+        {
+          beforeText: new RegExp("^\\s*[{\\[].*$"),
+          action: { indentAction: monaco.languages.IndentAction.Indent },
+        },
+      ],
     });
 
     monaco.languages.setMonarchTokensProvider("cbor-edn", {
@@ -226,15 +232,16 @@
         automaticLayout: true,
         minimap: { enabled: true },
         scrollBeyondLastLine: false,
+        wordWrap: "on",
         stickyScroll: {
           enabled: true,
         },
         cursorBlinking: "smooth",
         cursorSmoothCaretAnimation: "on",
         guides: {
-          indentation: true, // Normale Einrückungslinien
-          bracketPairs: true, // Linien zwischen Klammerpaaren (neu & cool)
-          highlightActiveBracketPair: true, // Leuchtet auf, wenn Cursor im Block ist
+          indentation: true,
+          bracketPairs: true,
+          highlightActiveBracketPair: true,
           highlightActiveIndentation: true,
         },
         bracketPairColorization: {
