@@ -4,6 +4,7 @@ import {
   CstParser,
   tokenMatcher,
   IParserErrorMessageProvider,
+  ILexerErrorMessageProvider,
 } from "chevrotain";
 import { Tag, Simple, encodedNumber } from "cbor2";
 import * as ipaddr from "ipaddr.js";
@@ -23,6 +24,22 @@ const ErrorProvider: IParserErrorMessageProvider = {
   },
   buildEarlyExitMessage: (options) => {
     return `Unexpected end of input. More data was expected.`; // finished the input but was expecting more tokens
+  },
+};
+
+const LexerErrorProvider: ILexerErrorMessageProvider = {
+  buildUnexpectedCharactersMessage: (
+    fullText,
+    startOffset,
+    length,
+    line,
+    column,
+  ) => {
+    const char = fullText.substring(startOffset, startOffset + length);
+    return `Unexpected character: '${char}' at line ${line}, column ${column}.`;
+  },
+  buildUnableToPopLexerModeMessage: (token) => {
+    return `Unable to pop lexer mode at line ${token.startLine}, column ${token.startColumn}.`;
   },
 };
 
@@ -137,6 +154,11 @@ const AppString = createToken({
   pattern: /[a-zA-Z][a-zA-Z0-9]*'(?:[^\\']|\\.)*'/,
   label: "application string (tag'...')",
 });
+const Unexpected = createToken({
+  name: "Unexpected",
+  pattern: /./,
+  label: "unexpected character",
+});
 
 const allTokens = [
   WhiteSpace,
@@ -170,6 +192,7 @@ const allTokens = [
   NonFin,
   NumberLiteral,
   Plus,
+  Unexpected,
 ];
 
 function parseHexFloat(text: string): number {
@@ -190,7 +213,9 @@ function parseHexFloat(text: string): number {
   return sign * value * Math.pow(2, exponent);
 }
 
-export const CborLexer = new Lexer(allTokens);
+export const CborLexer = new Lexer(allTokens, {
+  errorMessageProvider: LexerErrorProvider,
+});
 
 export class CborParser extends CstParser {
   public cbor!: () => any;
@@ -456,12 +481,14 @@ export class CborVisitor extends BaseCborVisitor {
       const prefix = rawImage.substring(0, tickPos);
       const content = rawImage.substring(tickPos + 1, rawImage.length - 1);
 
+      //
       if (prefix === "ip" || prefix === "IP") {
         try {
           let addr: ipaddr.IPv4 | ipaddr.IPv6;
           let prefixLen: number | null = null;
           let isCidr = false;
 
+          // Check for CIDR notation
           if (content.includes("/")) {
             const cidr = ipaddr.parseCIDR(content);
             addr = cidr[0];
@@ -473,6 +500,7 @@ export class CborVisitor extends BaseCborVisitor {
 
           let bytes = addr.toByteArray();
 
+          // Handle IPv4-mapped IPv6 addresses
           if (
             addr.kind() === "ipv6" &&
             (addr as ipaddr.IPv6).isIPv4MappedAddress()
@@ -485,6 +513,7 @@ export class CborVisitor extends BaseCborVisitor {
               bytes[11] = 0;
             }
           }
+          // If CIDR, zero out bits beyond the prefix length
           if (isCidr && prefixLen !== null) {
             for (let i = 0; i < bytes.length; i++) {
               const bitPos = i * 8;
@@ -497,10 +526,11 @@ export class CborVisitor extends BaseCborVisitor {
               }
             }
           }
-
+          // Determine tag number
           const isV4 = addr.kind() === "ipv4";
           const tagNum = isV4 ? 52 : 54;
 
+          // Return CIDR structure
           if (isCidr && prefixLen !== null) {
             const buf = Buffer.from(bytes);
             let trimLen = buf.length;
@@ -515,7 +545,7 @@ export class CborVisitor extends BaseCborVisitor {
               return arrayStructure;
             }
           }
-
+          // Return plain IP address
           if (prefix === "IP") {
             return new Tag(tagNum, toU8(bytes));
           } else {
