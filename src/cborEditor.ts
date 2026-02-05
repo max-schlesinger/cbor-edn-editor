@@ -561,6 +561,18 @@ export class CborEditorProvider
 
     if (result.parseErrors.length > 0) {
       result.parseErrors.forEach((err: any) => {
+        let msg = `Syntax Error: ${err.message}`;
+        let suggestion = null;
+
+        if (msg.includes("|||FIX:")) {
+          const parts = msg.split("|||FIX:");
+          msg = parts[0];
+          suggestion = parts[1];
+        } else if (err.name === "MismatchedTokenException" && err.expected) {
+          const tokenLabel = err.expected.LABEL || err.expected.name;
+          if (tokenLabel && tokenLabel.length === 1) suggestion = tokenLabel;
+        }
+
         const token = err.token;
         let range: vscode.Range;
         let startLine = 1,
@@ -571,14 +583,10 @@ export class CborEditorProvider
         if (token && token.startLine && token.startColumn) {
           const sl = token.startLine - 1;
           const sc = token.startColumn - 1;
-
           const el = token.endLine ? token.endLine - 1 : sl;
           let ec = token.endColumn ? token.endColumn : sc + 1;
-
           if (ec <= sc) ec = sc + 1;
-
           range = new vscode.Range(sl, sc, el, ec);
-
           startLine = token.startLine;
           startCol = token.startColumn;
           endLine = token.endLine || startLine;
@@ -587,7 +595,6 @@ export class CborEditorProvider
           range = new vscode.Range(0, 0, 0, 1);
         }
 
-        const msg = `Syntax Error: ${err.message}`;
         diagnostics.push(
           new vscode.Diagnostic(range, msg, vscode.DiagnosticSeverity.Error),
         );
@@ -599,6 +606,7 @@ export class CborEditorProvider
           endColumn: endCol,
           message: msg,
           severity: 8,
+          suggestion: suggestion,
         });
       });
     }

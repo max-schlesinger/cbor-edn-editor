@@ -13,7 +13,7 @@ const ErrorProvider: IParserErrorMessageProvider = {
   buildMismatchTokenMessage: (options) => {
     const expected = options.expected.LABEL || options.expected.name;
     const actual = options.actual.image;
-    return `Expected ${expected} but found '${actual}'`; // the token did not match the expected token
+    return `Expected ${expected} but found '${actual}'|||FIX:${expected}`; // the token did not match the expected token
   },
   buildNotAllInputParsedMessage: (options) => {
     return `Could not parse the entire input. Unexpected character at the end: '${options.firstRedundant.image}'`; // parser finished but there are still more tokens left in the input

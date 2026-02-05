@@ -115,6 +115,46 @@
       55799: "Self-Describe CBOR (Magic Number)",
     };
 
+    monaco.languages.registerCodeActionProvider("cbor-edn", {
+      provideCodeActions: function (model, range, context) {
+        const actions = [];
+        for (const marker of context.markers) {
+          const key = `${marker.startLineNumber}:${marker.startColumn}`;
+
+          const suggestion =
+            typeof syntaxSuggestions !== "undefined"
+              ? syntaxSuggestions.get(key)
+              : null;
+
+          if (suggestion) {
+            actions.push({
+              title: `Fix: Insert '${suggestion}'`,
+              kind: "quickfix",
+              diagnostics: [marker],
+
+              command: {
+                id: "cbor.applyQuickFix",
+                title: "Apply Fix",
+                arguments: [
+                  {
+                    startLineNumber: marker.startLineNumber,
+                    startColumn: marker.startColumn,
+                    endLineNumber: marker.startLineNumber,
+                    endColumn: marker.startColumn,
+                  },
+                  suggestion,
+                ],
+              },
+            });
+          }
+        }
+
+        return {
+          actions: actions,
+          dispose: () => {},
+        };
+      },
+    });
     monaco.languages.registerHoverProvider("cbor-edn", {
       provideHover: function (model, position) {
         const word = model.getWordAtPosition(position);
@@ -249,7 +289,19 @@
         },
       },
     );
-
+    monaco.editor.registerCommand(
+      "cbor.applyQuickFix",
+      function (accessor, range, text) {
+        editor.executeEdits("quick-fix-action", [
+          {
+            range: range,
+            text: text,
+            forceMoveMarkers: true,
+          },
+        ]);
+        editor.focus();
+      },
+    );
     setTimeout(() => {
       editor.focus();
     }, 100);
@@ -287,7 +339,7 @@
         text: value,
       });
     });
-
+    const syntaxSuggestions = new Map();
     window.addEventListener("message", (event) => {
       const message = event.data;
       switch (message.type) {
@@ -332,8 +384,13 @@
 
         case "syntaxError":
           const rawMarkers = message.body.markers || [];
+          syntaxSuggestions.clear();
 
           const markers = rawMarkers.map((m) => {
+            if (m.suggestion) {
+              const key = `${m.startLineNumber}:${m.startColumn}`;
+              syntaxSuggestions.set(key, m.suggestion);
+            }
             return {
               startLineNumber: m.startLineNumber,
               startColumn: m.startColumn,
