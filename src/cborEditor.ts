@@ -406,6 +406,16 @@ export class CborEditorProvider
     return document;
   }
 
+  private cleanHexOutput(rawHex: string): string {
+    return rawHex
+      .replace(/\s*\(Length:\s*\d+[^)]*\)/g, "")
+      .replace(/\[(?:key|val)?\s*\d+\]\s*/g, "")
+      .replace(/UTF8/g, "Text")
+      .replace(/Tag #32/g, "URI")
+      .replace(/Tag #54/g, "IP-Adresse")
+      .trim();
+  }
+
   async resolveCustomEditor(
     document: CborDocument,
     webviewPanel: vscode.WebviewPanel,
@@ -445,7 +455,8 @@ export class CborEditorProvider
               ) {
                 const buffer = encode(result.value);
                 try {
-                  const hexString = get_annotated_hex(buffer);
+                  const rawString = comment(buffer);
+                  const hexString = this.cleanHexOutput(rawString);
                   this.postMessage(webviewPanel, "updateHex", {
                     text: hexString,
                   });
@@ -466,7 +477,8 @@ export class CborEditorProvider
                 editable,
               });
               try {
-                const hexString = get_annotated_hex(document.documentData);
+                const rawString = comment(document.documentData);
+                const hexString = this.cleanHexOutput(rawString);
                 this.postMessage(webviewPanel, "updateHex", {
                   text: hexString,
                 });
@@ -619,7 +631,8 @@ export class CborEditorProvider
     if (result.lexErrors.length === 0 && result.parseErrors.length === 0) {
       try {
         const buffer = encode(result.value);
-        const hexString = get_annotated_hex(buffer);
+        const rawString = comment(buffer);
+        const hexString = this.cleanHexOutput(rawString);
         for (const panel of this.webviews.get(uri)) {
           this.postMessage(panel, "updateHex", { text: hexString });
         }

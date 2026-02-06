@@ -57,10 +57,26 @@ const WhiteSpace = createToken({
 
 const LBrace = createToken({ name: "LBrace", pattern: /{/, label: "{" });
 const RBrace = createToken({ name: "RBrace", pattern: /}/, label: "}" });
-const LBracket = createToken({ name: "LBracket", pattern: /\[/, label: "[" });
-const RBracket = createToken({ name: "RBracket", pattern: /]/, label: "]" });
-const LParen = createToken({ name: "LParen", pattern: /\(/, label: "(" });
-const RParen = createToken({ name: "RParen", pattern: /\)/, label: ")" });
+const LBracket = createToken({
+  name: "LBracket",
+  pattern: /\[/,
+  label: "[",
+});
+const RBracket = createToken({
+  name: "RBracket",
+  pattern: /]/,
+  label: "]",
+});
+const LParen = createToken({
+  name: "LParen",
+  pattern: /\(/,
+  label: "(",
+});
+const RParen = createToken({
+  name: "RParen",
+  pattern: /\)/,
+  label: ")",
+});
 const Colon = createToken({ name: "Colon", pattern: /:/, label: ":" });
 const Comma = createToken({ name: "Comma", pattern: /,/, label: "," });
 const Plus = createToken({ name: "Plus", pattern: /\+/, label: "+" });
