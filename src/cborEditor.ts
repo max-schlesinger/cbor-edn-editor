@@ -2,11 +2,9 @@
 import * as vscode from "vscode";
 import { Disposable, disposeAll } from "./dispose";
 import { getNonce } from "./util";
-import * as cbor from "cbor";
 import { parseCborEdn } from "./CborParser";
 import { decode, diagnose, encode, comment, CommentOptions } from "cbor2";
-import { get_annotated_hex } from "wasm-cbor";
-
+import { formatCborEdn } from "./Formatter";
 /**
  * Define the type of edits used in paw draw files.
  */
@@ -407,13 +405,10 @@ export class CborEditorProvider
   }
 
   private cleanHexOutput(rawHex: string): string {
-    return rawHex
-      .replace(/\s*\(Length:\s*\d+[^)]*\)/g, "")
-      .replace(/\[(?:key|val)?\s*\d+\]\s*/g, "")
-      .replace(/UTF8/g, "Text")
-      .replace(/Tag #32/g, "URI")
-      .replace(/Tag #54/g, "IP-Adresse")
-      .trim();
+    return rawHex;
+    //.replace(/\s*\(Length:\s*\d+[^)]*\)/g, "")
+    //.replace(/\[(?:key|val)?\s*\d+\]\s*/g, "")
+    //.trim();
   }
 
   async resolveCustomEditor(
@@ -797,6 +792,29 @@ export class CborEditorProvider
         const text: string = message.text;
         this.updateDiagnostics(document.uri, text);
         document.makeEdit(text);
+        return;
+      }
+
+      case "requestFormat": {
+        const text = message.text;
+        const result = parseCborEdn(text);
+
+        let formatted = text;
+        if (result.lexErrors.length === 0 && result.parseErrors.length === 0) {
+          try {
+            formatted = formatCborEdn(result.cst, result.comments);
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        const panels = Array.from(this.webviews.get(document.uri));
+        if (panels.length > 0) {
+          const panel = panels[0];
+          this.postMessage(panel, "formatResponse", {
+            requestId: message.requestId,
+            body: formatted,
+          });
+        }
         return;
       }
 

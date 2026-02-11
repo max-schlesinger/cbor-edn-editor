@@ -46,7 +46,7 @@ const LexerErrorProvider: ILexerErrorMessageProvider = {
 const Comment = createToken({
   name: "Comment",
   pattern: /\/[^\/]*\/|#[^\r\n]*/,
-  group: Lexer.SKIPPED,
+  group: "comments",
 });
 
 const WhiteSpace = createToken({
@@ -407,6 +407,7 @@ export interface ParseResult {
   lexErrors: any[];
   parseErrors: any[];
   value: any;
+  comments: any[];
 }
 
 const BaseCborVisitor = parserInstance.getBaseCstVisitorConstructor();
@@ -745,5 +746,6 @@ export function parseCborEdn(text: string): ParseResult {
     lexErrors: lexResult.errors,
     parseErrors: parserInstance.errors,
     value: value,
+    comments: lexResult.groups ? lexResult.groups["comments"] || [] : [],
   };
 }

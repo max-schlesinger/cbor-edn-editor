@@ -155,6 +155,23 @@
         };
       },
     });
+
+    let formatRequestId = 0;
+    const formatPending = new Map();
+
+    monaco.languages.registerDocumentFormattingEditProvider("cbor-edn", {
+      provideDocumentFormattingEdits: function (model, options, token) {
+        return new Promise((resolve) => {
+          const reqId = formatRequestId++;
+          formatPending.set(reqId, resolve);
+          vscode.postMessage({
+            type: "requestFormat",
+            text: model.getValue(),
+            requestId: reqId,
+          });
+        });
+      },
+    });
     monaco.languages.registerHoverProvider("cbor-edn", {
       provideHover: function (model, position) {
         const word = model.getWordAtPosition(position);
@@ -207,62 +224,6 @@
         };
       },
     });
-
-    function formatEdn(text) {
-      const output = [];
-      let indentLevel = 0;
-      const indent = "  ";
-      let inString = false;
-
-      for (let i = 0; i < text.length; i++) {
-        const char = text[i];
-
-        if ((char === '"' || char === "'") && text[i - 1] !== "\\") {
-          inString = !inString;
-        }
-
-        if (inString) {
-          output.push(char);
-          continue;
-        }
-
-        if (/\s/.test(char)) {
-          continue;
-        }
-
-        switch (char) {
-          case "{":
-          case "[":
-            indentLevel++;
-            output.push(char + "\n" + indent.repeat(indentLevel));
-            break;
-
-          case "}":
-          case "]":
-            indentLevel = Math.max(0, indentLevel - 1);
-            if (output.length > 0 && output[output.length - 1] !== "\n") {
-              output.push("\n" + indent.repeat(indentLevel) + char);
-            } else {
-              output.push(indent.repeat(indentLevel) + char);
-            }
-            break;
-
-          case ",":
-            output.push(char + "\n" + indent.repeat(indentLevel));
-            break;
-
-          case ":":
-            output.push(": ");
-            break;
-
-          default:
-            output.push(char);
-            break;
-        }
-      }
-      return output.join("").trim();
-    }
-
     const editor = monaco.editor.create(
       document.getElementById("editor-part"),
       {
@@ -362,7 +323,6 @@
           let val = editor.getValue();
 
           if (message.body.format === true) {
-            //val = formatEdn(val);
             const oldEditable = isEditable;
             isEditable = false;
             editor.setValue(val);
@@ -379,6 +339,21 @@
           const hexContainer = document.getElementById("hex-part");
           if (hexContainer) {
             hexContainer.textContent = message.body.text;
+          }
+          break;
+
+        case "formatResponse":
+          const responseData = message.body;
+          const resolve = formatPending.get(responseData.requestId);
+
+          if (resolve) {
+            formatPending.delete(responseData.requestId);
+            resolve([
+              {
+                range: editor.getModel().getFullModelRange(),
+                text: responseData.body,
+              },
+            ]);
           }
           break;
 
