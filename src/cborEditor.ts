@@ -464,6 +464,9 @@ export class CborEditorProvider
             }
           } else {
             try {
+              vscode.window.showWarningMessage(
+                "Note: You are editing a binary CBOR file. Any comments you add to this EDN view will be lost when saving.",
+              );
               const text = diagnose(document.documentData);
               const formattedText = this.prettyPrintEDN(text);
 
@@ -536,12 +539,15 @@ export class CborEditorProvider
   ): Promise<void> {
     if (!text || text.trim().length === 0) {
       this.diagnostics.set(uri, []);
+      for (const panel of this.webviews.get(uri)) {
+        this.postMessage(panel, "syntaxError", { markers: [] });
+      }
       return;
     }
 
     const result = parseCborEdn(text);
     const diagnostics: vscode.Diagnostic[] = [];
-    const redMarkers: any[] = [];
+    const editorMarkers: any[] = [];
 
     if (result.lexErrors.length > 0) {
       result.lexErrors.forEach((err: any) => {
@@ -555,7 +561,7 @@ export class CborEditorProvider
         diagnostics.push(
           new vscode.Diagnostic(range, msg, vscode.DiagnosticSeverity.Error),
         );
-        redMarkers.push({
+        editorMarkers.push({
           startLineNumber: line + 1,
           startColumn: col + 1,
           endLineNumber: line + 1,
@@ -606,7 +612,7 @@ export class CborEditorProvider
           new vscode.Diagnostic(range, msg, vscode.DiagnosticSeverity.Error),
         );
 
-        redMarkers.push({
+        editorMarkers.push({
           startLineNumber: startLine,
           startColumn: startCol,
           endLineNumber: endLine,
@@ -617,10 +623,50 @@ export class CborEditorProvider
         });
       });
     }
+
+    // 3. NEU: Kommentare als gelbe Warnungen markieren (Nur bei CBOR)
+    const isCbor = uri.fsPath.toLowerCase().endsWith(".cbor");
+    if (isCbor && result.comments && result.comments.length > 0) {
+      result.comments.forEach((comment: any) => {
+        const startLine = comment.startLine || 1;
+        const startCol = comment.startColumn || 1;
+        const endLine = comment.endLine || startLine;
+
+        // Wir berechnen das Ende des Unterkringelns anhand der Textlänge des Kommentars
+        const length = comment.image ? comment.image.length : 1;
+        const endCol = startCol + length;
+
+        // Wir fügen es auch zu den VS Code Diagnostics hinzu, damit es im "Problems" Tab auftaucht
+        const range = new vscode.Range(
+          startLine - 1,
+          startCol - 1,
+          endLine - 1,
+          endCol - 1,
+        );
+        diagnostics.push(
+          new vscode.Diagnostic(
+            range,
+            "Kommentare werden beim Speichern in die binäre CBOR-Datei verworfen.",
+            vscode.DiagnosticSeverity.Warning,
+          ),
+        );
+
+        editorMarkers.push({
+          startLineNumber: startLine,
+          startColumn: startCol,
+          endLineNumber: endLine,
+          endColumn: endCol,
+          message:
+            "Kommentare werden beim Speichern in die binäre CBOR-Datei verworfen.",
+          severity: 4,
+        });
+      });
+    }
+
     this.diagnostics.set(uri, diagnostics);
 
     for (const panel of this.webviews.get(uri)) {
-      this.postMessage(panel, "syntaxError", { markers: redMarkers });
+      this.postMessage(panel, "syntaxError", { markers: editorMarkers });
     }
 
     if (result.lexErrors.length === 0 && result.parseErrors.length === 0) {

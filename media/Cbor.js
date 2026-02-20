@@ -322,16 +322,10 @@
         case "getEdnText":
           let val = editor.getValue();
 
-          if (message.body.format === true) {
-            const oldEditable = isEditable;
-            isEditable = false;
-            editor.setValue(val);
-            isEditable = oldEditable;
-          }
           vscode.postMessage({
             type: "response",
             requestId: message.requestId,
-            body: editor.getValue(),
+            body: val,
           });
           break;
 
@@ -373,7 +367,7 @@
               endColumn: m.endColumn,
               message: m.message,
 
-              severity: monaco.MarkerSeverity.Error,
+              severity: m.severity || monaco.MarkerSeverity.Error,
             };
           });
 
