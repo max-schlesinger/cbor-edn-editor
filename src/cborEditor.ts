@@ -448,7 +448,15 @@ export class CborEditorProvider
                 result.lexErrors.length === 0 &&
                 result.parseErrors.length === 0
               ) {
-                const buffer = encode(result.value);
+                let valueToEncode = result.value;
+                if (
+                  Array.isArray(valueToEncode) &&
+                  valueToEncode.length === 1
+                ) {
+                  valueToEncode = valueToEncode[0];
+                }
+
+                const buffer = encode(valueToEncode);
                 try {
                   const rawString = comment(buffer);
                   const hexString = this.cleanHexOutput(rawString);
@@ -585,7 +593,9 @@ export class CborEditorProvider
           const tokenLabel = err.expected.LABEL || err.expected.name;
           if (tokenLabel && tokenLabel.length === 1) suggestion = tokenLabel;
         }
-
+        if (suggestion === ":" || suggestion === ",") {
+          suggestion += " ";
+        }
         const token = err.token;
         let range: vscode.Range;
         let startLine = 1,
@@ -624,7 +634,6 @@ export class CborEditorProvider
       });
     }
 
-    // 3. NEU: Kommentare als gelbe Warnungen markieren (Nur bei CBOR)
     const isCbor = uri.fsPath.toLowerCase().endsWith(".cbor");
     if (isCbor && result.comments && result.comments.length > 0) {
       result.comments.forEach((comment: any) => {
@@ -632,11 +641,9 @@ export class CborEditorProvider
         const startCol = comment.startColumn || 1;
         const endLine = comment.endLine || startLine;
 
-        // Wir berechnen das Ende des Unterkringelns anhand der Textlänge des Kommentars
         const length = comment.image ? comment.image.length : 1;
         const endCol = startCol + length;
 
-        // Wir fügen es auch zu den VS Code Diagnostics hinzu, damit es im "Problems" Tab auftaucht
         const range = new vscode.Range(
           startLine - 1,
           startCol - 1,
@@ -646,7 +653,7 @@ export class CborEditorProvider
         diagnostics.push(
           new vscode.Diagnostic(
             range,
-            "Kommentare werden beim Speichern in die binäre CBOR-Datei verworfen.",
+            "Comments are discarded when saving as a CBOR file",
             vscode.DiagnosticSeverity.Warning,
           ),
         );
@@ -656,8 +663,7 @@ export class CborEditorProvider
           startColumn: startCol,
           endLineNumber: endLine,
           endColumn: endCol,
-          message:
-            "Kommentare werden beim Speichern in die binäre CBOR-Datei verworfen.",
+          message: "Comments are discarded when saving as a CBOR file",
           severity: 4,
         });
       });
@@ -671,7 +677,12 @@ export class CborEditorProvider
 
     if (result.lexErrors.length === 0 && result.parseErrors.length === 0) {
       try {
-        const buffer = encode(result.value);
+        let valueToEncode = result.value;
+        if (Array.isArray(valueToEncode) && valueToEncode.length === 1) {
+          valueToEncode = valueToEncode[0];
+        }
+
+        const buffer = encode(valueToEncode);
         const rawString = comment(buffer);
         const hexString = this.cleanHexOutput(rawString);
         for (const panel of this.webviews.get(uri)) {
@@ -765,15 +776,14 @@ export class CborEditorProvider
             <title>CBOR EDN Editor</title>
            <style>
     html, body { height: 100%; margin: 0; padding: 0; overflow: hidden; }
-    
-    #container { 
-        display: flex; 
+   #container { 
+        display: grid; 
+        grid-template-columns: 60% 40%; /* Exakt 60% links, 40% rechts */
         width: 100%; 
         height: 100%; 
     }
 
     #editor-part { 
-        flex: 1;              
         height: 100%; 
         border-right: 1px solid var(--vscode-panel-border); 
         overflow: hidden;     
@@ -781,8 +791,6 @@ export class CborEditorProvider
     }
 
     #hex-part { 
-        width: 400px;         
-        flex-shrink: 0;       
         height: 100%; 
         font-family: 'Consolas', 'Courier New', monospace;
         white-space: pre; 
