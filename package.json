@@ -126,7 +126,6 @@
     "cbor2": "^2.0.1",
     "chevrotain": "^11.1.0",
     "edn-data": "^1.1.2",
-    "ipaddr.js": "^2.3.0",
-    "wasm-cbor": "file:wasm-cbor/pkg"
+    "ipaddr.js": "^2.3.0"
   }
 }
