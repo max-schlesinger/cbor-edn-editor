@@ -307,6 +307,66 @@ export class CborEditorProvider
         },
       ),
     );
+    this._context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "cbor-edn-editor.copyCborMeLink",
+        async () => {
+          const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+          if (
+            !activeTab ||
+            !(activeTab.input instanceof vscode.TabInputCustom)
+          ) {
+            vscode.window.showErrorMessage("Please open a CBOR or EDN file");
+            return;
+          }
+          const uri = activeTab.input.uri;
+          const panels = Array.from(this.webviews.get(uri));
+          if (!panels.length) return;
+          const panel = panels[0];
+
+          try {
+            const ednText = await this.postMessageWithResponse<string>(
+              panel,
+              "getEdnText",
+              {},
+            );
+
+            const result = parseCborEdn(ednText);
+            if (result.lexErrors.length > 0 || result.parseErrors.length > 0) {
+              vscode.window.showErrorMessage(
+                "Cannot generate link: File contains syntax errors.",
+              );
+              return;
+            }
+
+            let valueToEncode = result.value;
+            if (Array.isArray(valueToEncode) && valueToEncode.length === 1) {
+              valueToEncode = valueToEncode[0];
+            }
+
+            const cborBytes = encode(valueToEncode);
+            const hexString = Buffer.from(cborBytes)
+              .toString("hex")
+              .toUpperCase();
+            if (!hexString) {
+              throw new Error("Could not generate hex string.");
+            }
+
+            const url = `https://cbor.me/?bytes=${hexString}`;
+            await vscode.env.clipboard.writeText(url);
+
+            vscode.window.showInformationMessage(
+              "cbor.me link copied to clipboard! 📋",
+            );
+          } catch (e: any) {
+            console.error(e);
+            vscode.window.showErrorMessage(
+              `Error generating link: ${e.message}`,
+            );
+          }
+        },
+      ),
+    );
   }
 
   public static register(context: vscode.ExtensionContext): vscode.Disposable {

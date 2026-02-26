@@ -76,9 +76,20 @@
         "title": "Export as CBOR",
         "category": "CBOR",
         "icon": "$(file-binary)"
+      },
+      {
+        "command": "cbor-edn-editor.copyCborMeLink",
+        "title": "CBOR: Copy cbor.me Link",
+        "icon": "$(copy)"
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "cbor-edn-editor.copyCborMeLink",
+          "when": "activeCustomEditorId == 'cbor-edn-editor.cbor'"
+        }
+      ],
       "editor/title": [
         {
           "command": "cbor-edn-editor.saveAsEdn",
@@ -89,6 +100,11 @@
           "command": "cbor-edn-editor.saveAsCbor",
           "group": "navigation",
           "when": "activeCustomEditorId == 'cbor-edn-editor.cbor' && resourceExtname == .edn"
+        },
+        {
+          "command": "cbor-edn-editor.copyCborMeLink",
+          "group": "navigation",
+          "when": "activeCustomEditorId == 'cbor-edn-editor.cbor'"
         }
       ]
     }
@@ -96,7 +112,6 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "gen": "apg -i src/grammar.bnf -o src/grammar.js",
-    "build:wasm": "cd wasm-cbor && wasm-pack build --target nodejs",
     "compile": "npm run gen && tsc -p ./ && cp src/grammar.js out/grammar.js",
     "lint": "eslint \"src/**/*.ts\"",
     "watch": "npm run gen && tsc -watch -p ./",
