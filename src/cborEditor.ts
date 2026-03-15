@@ -5,6 +5,7 @@ import { getNonce } from "./util";
 import { parseCborEdn } from "./CborParser";
 import { decode, diagnose, encode, comment, CommentOptions } from "cbor2";
 import { formatCborEdn } from "./Formatter";
+import { generateCborMeHexView } from "./HexFormatter";
 /**
  * Define the type of edits used in paw draw files.
  */
@@ -519,9 +520,10 @@ export class CborEditorProvider
                 const buffer = encode(valueToEncode);
                 try {
                   const rawString = comment(buffer);
-                  const hexString = this.cleanHexOutput(rawString);
+                  const hexString = generateCborMeHexView(buffer);
                   this.postMessage(webviewPanel, "updateHex", {
                     text: hexString,
+                    pathMap: result.pathMap,
                   });
                 } catch (wasmErr) {
                   console.error(wasmErr);
@@ -542,11 +544,13 @@ export class CborEditorProvider
                 value: formattedText,
                 editable,
               });
+              const result = parseCborEdn(formattedText);
+
               try {
-                const rawString = comment(document.documentData);
-                const hexString = this.cleanHexOutput(rawString);
+                const hexString = generateCborMeHexView(document.documentData);
                 this.postMessage(webviewPanel, "updateHex", {
                   text: hexString,
+                  pathMap: result.pathMap,
                 });
               } catch (wasmErr) {
                 console.error("Wasm Error:", wasmErr);
@@ -744,9 +748,12 @@ export class CborEditorProvider
 
         const buffer = encode(valueToEncode);
         const rawString = comment(buffer);
-        const hexString = this.cleanHexOutput(rawString);
+        const hexString = generateCborMeHexView(buffer);
         for (const panel of this.webviews.get(uri)) {
-          this.postMessage(panel, "updateHex", { text: hexString });
+          this.postMessage(panel, "updateHex", {
+            text: hexString,
+            pathMap: result.pathMap,
+          });
         }
       } catch (e) {
         console.error(e);

@@ -301,6 +301,10 @@
       });
     });
     const syntaxSuggestions = new Map();
+
+    let currentPathMap = {};
+    let currentDecorations = [];
+
     window.addEventListener("message", (event) => {
       const message = event.data;
       switch (message.type) {
@@ -321,7 +325,6 @@
 
         case "getEdnText":
           let val = editor.getValue();
-
           vscode.postMessage({
             type: "response",
             requestId: message.requestId,
@@ -331,8 +334,10 @@
 
         case "updateHex":
           const hexContainer = document.getElementById("hex-part");
-          if (hexContainer) {
-            hexContainer.textContent = message.body.text;
+          hexContainer.innerHTML = message.body.text;
+
+          if (message.body.pathMap) {
+            currentPathMap = message.body.pathMap;
           }
           break;
 
@@ -366,7 +371,6 @@
               endLineNumber: m.endLineNumber,
               endColumn: m.endColumn,
               message: m.message,
-
               severity: m.severity || monaco.MarkerSeverity.Error,
             };
           });
@@ -377,8 +381,91 @@
             markers,
           );
           break;
+
+        case "highlight":
+          document
+            .querySelectorAll(".highlighted")
+            .forEach((el) => el.classList.remove("highlighted"));
+
+          if (message.path) {
+            const targetDivs = document.querySelectorAll(
+              `[data-path="${message.path}"]`,
+            );
+            targetDivs.forEach((div) => div.classList.add("highlighted"));
+          }
+          break;
       }
     });
+
+    document.addEventListener("click", (event) => {
+      const hexLine = event.target.closest(".hex-line");
+      if (hexLine) {
+        const path = hexLine.getAttribute("data-path");
+
+        document
+          .querySelectorAll(".highlighted")
+          .forEach((el) => el.classList.remove("highlighted"));
+        document
+          .querySelectorAll(`[data-path="${path}"]`)
+          .forEach((el) => el.classList.add("highlighted"));
+
+        if (editor) {
+          if (currentPathMap[path]) {
+            const loc = currentPathMap[path];
+
+            currentDecorations = editor.deltaDecorations(currentDecorations, [
+              {
+                range: new monaco.Range(
+                  loc.startLine,
+                  loc.startCol,
+                  loc.endLine,
+                  loc.endCol,
+                ),
+                options: { inlineClassName: "monaco-highlight" },
+              },
+            ]);
+            editor.revealRangeInCenter(
+              new monaco.Range(
+                loc.startLine,
+                loc.startCol,
+                loc.endLine,
+                loc.endCol,
+              ),
+            );
+          }
+        }
+      }
+    });
+
+    editor.onDidChangeCursorPosition((e) => {
+      const line = e.position.lineNumber;
+      const col = e.position.column;
+
+      let foundPath = null;
+      for (const [path, loc] of Object.entries(currentPathMap)) {
+        if (line >= loc.startLine && line <= loc.endLine) {
+          if (line === loc.startLine && col < loc.startCol) continue;
+          if (line === loc.endLine && col > loc.endCol) continue;
+
+          if (!foundPath || path.length > foundPath.length) {
+            foundPath = path;
+          }
+        }
+      }
+
+      if (foundPath) {
+        document
+          .querySelectorAll(".highlighted")
+          .forEach((el) => el.classList.remove("highlighted"));
+
+        const targetDivs = document.querySelectorAll(
+          `[data-path="${foundPath}"]`,
+        );
+
+        targetDivs.forEach((el) => el.classList.add("highlighted"));
+      }
+    });
+
     vscode.postMessage({ type: "ready" });
   });
 })();

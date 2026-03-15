@@ -408,23 +408,89 @@ export interface ParseResult {
   parseErrors: any[];
   value: any;
   comments: any[];
+  pathMap: Record<
+    string,
+    { startLine: number; startCol: number; endLine: number; endCol: number }
+  >;
 }
 
 const BaseCborVisitor = parserInstance.getBaseCstVisitorConstructor();
 
 export class CborVisitor extends BaseCborVisitor {
+  public pathMap: Record<
+    string,
+    { startLine: number; startCol: number; endLine: number; endCol: number }
+  > = {};
+  public pathStack: string[] = ["root"];
+
   constructor() {
     super();
     this.validateVisitor();
   }
 
+  private recordLocation(ctx: any) {
+    let startLine = Infinity,
+      startCol = Infinity;
+    let endLine = 0,
+      endCol = 0;
+
+    const traverse = (node: any) => {
+      if (!node) return;
+      if (Array.isArray(node)) {
+        node.forEach(traverse);
+      } else if (node.image !== undefined && node.startLine !== undefined) {
+        if (node.startLine < startLine) {
+          startLine = node.startLine;
+          startCol = node.startColumn;
+        }
+        if (node.startLine === startLine && node.startColumn < startCol)
+          startCol = node.startColumn;
+
+        let eLine = node.endLine || node.startLine;
+        let eCol = (node.endColumn || node.startColumn) + 1;
+
+        if (eLine > endLine) {
+          endLine = eLine;
+          endCol = eCol;
+        }
+        if (eLine === endLine && eCol > endCol) endCol = eCol;
+      } else if (typeof node === "object") {
+        for (const key in node) {
+          if (key !== "location" && key !== "recoveredNode")
+            traverse(node[key]);
+        }
+      }
+    };
+
+    traverse(ctx);
+    if (startLine !== Infinity) {
+      this.pathMap[this.pathStack.join("")] = {
+        startLine,
+        startCol,
+        endLine,
+        endCol,
+      };
+    }
+  }
+
   cbor(ctx: any) {
     if (ctx.value) {
-      return ctx.value.map((v: any) => this.visit(v));
+      if (ctx.value.length === 1) {
+        return [this.visit(ctx.value[0])];
+      }
+      return ctx.value.map((v: any, index: number) => {
+        this.pathStack.push(`[${index}]`);
+        const res = this.visit(v);
+        this.pathStack.pop();
+        return res;
+      });
     }
     return [];
   }
+
   value(ctx: any) {
+    this.recordLocation(ctx);
+
     if (ctx.map) return this.visit(ctx.map);
     if (ctx.array) return this.visit(ctx.array);
     if (ctx.tag) return this.visit(ctx.tag);
@@ -443,25 +509,39 @@ export class CborVisitor extends BaseCborVisitor {
   }
 
   map(ctx: any) {
-    const obj: any = {};
+    const obj = new Map();
+
     if (ctx.pair) {
-      ctx.pair.forEach((pairCtx: any) => {
+      ctx.pair.forEach((pairCtx: any, index: number) => {
+        this.pathStack.push(`.m[${index}]`);
         const entry = this.visit(pairCtx);
-        obj[entry.key] = entry.value;
+        this.pathStack.pop();
+
+        obj.set(entry.key, entry.value);
       });
     }
     return obj;
   }
 
   pair(ctx: any) {
+    this.pathStack.push(`.k`);
     const key = this.visit(ctx.value[0]);
+    this.pathStack.pop();
+    this.pathStack.push(`.v`);
     const val = this.visit(ctx.value[1]);
+    this.pathStack.pop();
+
     return { key, value: val };
   }
 
   array(ctx: any) {
     if (!ctx.value) return [];
-    return ctx.value.map((v: any) => this.visit(v));
+    return ctx.value.map((v: any, index: number) => {
+      this.pathStack.push(`[${index}]`);
+      const res = this.visit(v);
+      this.pathStack.pop();
+      return res;
+    });
   }
 
   tag(ctx: any) {
@@ -481,7 +561,10 @@ export class CborVisitor extends BaseCborVisitor {
       tagNumber = Number(raw);
     }
 
+    this.pathStack.push(".tagContent");
     const content = this.visit(ctx.value);
+    this.pathStack.pop();
+
     return new Tag(tagNumber, content);
   }
 
@@ -747,5 +830,6 @@ export function parseCborEdn(text: string): ParseResult {
     parseErrors: parserInstance.errors,
     value: value,
     comments: lexResult.groups ? lexResult.groups["comments"] || [] : [],
+    pathMap: visitor.pathMap,
   };
 }
