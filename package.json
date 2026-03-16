@@ -111,10 +111,9 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "gen": "apg -i src/grammar.bnf -o src/grammar.js",
-    "compile": "npm run gen && tsc -p ./ && cp src/grammar.js out/grammar.js",
+    "compile": "tsc -p ./",
     "lint": "eslint \"src/**/*.ts\"",
-    "watch": "npm run gen && tsc -watch -p ./",
+    "watch": "tsc -watch -p ./",
     "build:vsix": "vsce package",
     "test:unit": "jest"
   },
@@ -135,12 +134,8 @@
   },
   "dependencies": {
     "@transmute/edn": "^0.0.5",
-    "apg-js": "^4.4.0",
-    "apg-lib": "^3.1.1",
-    "cbor": "^9.0.2",
     "cbor2": "^2.0.1",
     "chevrotain": "^11.1.0",
-    "edn-data": "^1.1.2",
     "ipaddr.js": "^2.3.0"
   }
 }
