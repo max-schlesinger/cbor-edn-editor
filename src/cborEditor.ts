@@ -1,25 +1,29 @@
-/* eslint-disable no-mixed-spaces-and-tabs */
 import * as vscode from "vscode";
 import { Disposable, disposeAll } from "./dispose";
 import { getNonce } from "./util";
 import { parseCborEdn } from "./CborParser";
-import { decode, diagnose, encode, comment, CommentOptions } from "cbor2";
+import { diagnose, encode } from "cbor2";
 import { formatCborEdn } from "./Formatter";
 import { generateCborMeHexView } from "./HexFormatter";
 /**
- * Define the type of edits used in paw draw files.
+ * Represents a text change made in the EDN webview (Monaco Editor)
  */
 interface CborEdit {
   readonly text: string;
 }
 
+/**
+ * A delegate interface used by the document to perform file system operations
+ * (e.g., when saving or exporting).
+ */
 interface CborDocumentDelegate {
   getFileData(destination: vscode.Uri): Promise<Uint8Array>;
-  //getFileData(): Promise<Uint8Array>;
 }
 
 /**
- * Define the document (the data model) used for paw draw files.
+ * The internal data model for `.cbor` and `.edn` files.
+ * Manages the binary content (or text content for EDN), stores the edit history,
+ * and handles the lifecycle (Save, Backup, Revert) within VS Code.
  */
 class CborDocument extends Disposable implements vscode.CustomDocument {
   static async create(
@@ -27,7 +31,6 @@ class CborDocument extends Disposable implements vscode.CustomDocument {
     backupId: string | undefined,
     delegate: CborDocumentDelegate,
   ): Promise<CborDocument | PromiseLike<CborDocument>> {
-    // If we have a backup, read that. Otherwise read the resource from the workspace
     const dataFile =
       typeof backupId === "string" ? vscode.Uri.parse(backupId) : uri;
     const fileData = await CborDocument.readFile(dataFile);
@@ -112,9 +115,9 @@ class CborDocument extends Disposable implements vscode.CustomDocument {
   }
 
   /**
-   * Called when the user edits the document in a webview.
-   *
-   * This fires an event to notify VS Code that the document has been edited.
+   * Called when the user edits the document in the webview.
+   * Notifies VS Code that the document is dirty.
+   * * @param newText The new EDN text from the editor.
    */
   makeEdit(newText: string) {
     this._onDidChange.fire({
@@ -186,19 +189,15 @@ class CborDocument extends Disposable implements vscode.CustomDocument {
 }
 
 /**
- * Provider for paw draw editors.
+ * Provider for the custom CBOR/EDN editor.
  *
- * Paw draw editors are used for `.Cbor` files, which are just `.png` files with a different file extension.
- *
- * This provider demonstrates:
- *
- * - How to implement a custom editor for binary files.
- * - Setting up the initial webview for a custom editor.
- * - Loading scripts and styles in a custom editor.
- * - Communication between VS Code and the custom editor.
- * - Using CustomDocuments to store information that is shared between multiple custom editors.
- * - Implementing save, undo, redo, and revert.
- * - Backing up a custom editor.
+ * This provider links the VS Code Custom Editor API with a Monaco-based webview.
+ * It allows viewing binary `.cbor` files as readable EDN, editing them,
+ * and saving them back as binary CBOR.
+ * * Main responsibilities include:
+ * - Parsing between CBOR (Binary) and EDN (Text).
+ * - Providing the HTML/JS for the Monaco webview.
+ * - Synchronizing changes, diagnostic errors (syntax), and hex views.
  */
 export class CborEditorProvider
   implements vscode.CustomEditorProvider<CborDocument>
@@ -357,7 +356,7 @@ export class CborEditorProvider
             await vscode.env.clipboard.writeText(url);
 
             vscode.window.showInformationMessage(
-              "cbor.me link copied to clipboard! 📋",
+              "cbor.me link copied to clipboard!",
             );
           } catch (e: any) {
             console.error(e);
@@ -382,6 +381,12 @@ export class CborEditorProvider
       },
     );
   }
+
+  /**
+   * Called by VS Code to open a new Custom Document.
+   * Initializes the `CborDocument` and defines how the file is processed when saving
+   * (e.g., validating EDN syntax before converting and saving as CBOR).
+   */
   async openCustomDocument(
     uri: vscode.Uri,
     openContext: { backupId?: string },
@@ -465,13 +470,11 @@ export class CborEditorProvider
     return document;
   }
 
-  private cleanHexOutput(rawHex: string): string {
-    return rawHex;
-    //.replace(/\s*\(Length:\s*\d+[^)]*\)/g, "")
-    //.replace(/\[(?:key|val)?\s*\d+\]\s*/g, "")
-    //.trim();
-  }
-
+  /**
+   * Links the opened document to a webview panel.
+   * Generates the HTML, sets the initial values (EDN & Hex), and listens
+   * for messages sent from the Monaco editor in the webview.
+   */
   async resolveCustomEditor(
     document: CborDocument,
     webviewPanel: vscode.WebviewPanel,
@@ -519,7 +522,6 @@ export class CborEditorProvider
 
                 const buffer = encode(valueToEncode);
                 try {
-                  const rawString = comment(buffer);
                   const hexString = generateCborMeHexView(buffer);
                   this.postMessage(webviewPanel, "updateHex", {
                     text: hexString,
@@ -605,6 +607,11 @@ export class CborEditorProvider
     return document.backup(context.destination, cancellation);
   }
 
+  /**
+   * Parses the current EDN text, generates VS Code Diagnostics for syntax errors,
+   * and sends corresponding markers back to the Monaco editor.
+   * If the syntax is valid, it also regenerates and syncs the hex view.
+   */
   private async updateDiagnostics(
     uri: vscode.Uri,
     text: string,
@@ -747,7 +754,6 @@ export class CborEditorProvider
         }
 
         const buffer = encode(valueToEncode);
-        const rawString = comment(buffer);
         const hexString = generateCborMeHexView(buffer);
         for (const panel of this.webviews.get(uri)) {
           this.postMessage(panel, "updateHex", {
