@@ -44,29 +44,23 @@ class CborFormatterVisitor extends BaseCborVisitor {
         }
       }
     }
-
     if (startOffset === Infinity) return;
 
     const relevantComments = this.comments.filter(
       (c) =>
         c.startOffset >= this.lastTokenEndOffset && c.startOffset < startOffset,
     );
-
-    if (relevantComments.length > 0) {
+    relevantComments.forEach((c) => {
       if (
         this.output.length > 0 &&
-        !this.output[this.output.length - 1].endsWith("\n") &&
-        !this.output[this.output.length - 1].endsWith("  ")
+        !this.output[this.output.length - 1].endsWith("\n")
       ) {
         this.newline();
       }
-
-      relevantComments.forEach((c) => {
-        this.push(c.image);
-        this.newline();
-        this.lastTokenEndOffset = c.endOffset || c.startOffset + c.image.length;
-      });
-    }
+      this.push(c.image);
+      this.newline();
+      this.lastTokenEndOffset = (c.endOffset || 0) + 1;
+    });
   }
 
   private updateLastOffset(ctx: any) {
@@ -114,9 +108,11 @@ class CborFormatterVisitor extends BaseCborVisitor {
   }
 
   map(ctx: any) {
+    const openBracket = ctx.LSquare?.[0];
     this.push("{");
-    if (ctx.Spec) this.push(ctx.Spec[0].image);
-
+    if (openBracket) {
+      this.printTrailingComments(openBracket);
+    }
     if (ctx.pair) {
       this.indentLevel++;
       this.newline();
@@ -142,7 +138,11 @@ class CborFormatterVisitor extends BaseCborVisitor {
   }
 
   array(ctx: any) {
+    const openBracket = ctx.LSquare?.[0];
     this.push("[");
+    if (openBracket) {
+      this.printTrailingComments(openBracket);
+    }
     if (ctx.Spec) this.push(ctx.Spec[0].image);
 
     if (ctx.value) {
@@ -228,6 +228,21 @@ class CborFormatterVisitor extends BaseCborVisitor {
 
   public getResult() {
     return this.output.join("");
+  }
+
+  private printTrailingComments(token: IToken) {
+    if (!token) return;
+
+    const trailing = this.comments.filter(
+      (c) =>
+        c.startLine === token.startLine &&
+        c.startOffset > (token.endOffset ?? 0),
+    );
+    trailing.forEach((c) => {
+      this.push(" ");
+      this.push(c.image);
+      this.lastTokenEndOffset = c.endOffset || c.startOffset + c.image.length;
+    });
   }
 }
 
