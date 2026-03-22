@@ -9,6 +9,7 @@ class CborFormatterVisitor extends BaseCborVisitor {
 
   private comments: IToken[] = [];
   private lastTokenEndOffset = 0;
+  private lastPrintedLine = 0;
 
   constructor(comments: IToken[]) {
     super();
@@ -23,6 +24,15 @@ class CborFormatterVisitor extends BaseCborVisitor {
   private newline() {
     this.push("\n");
     this.push("  ".repeat(this.indentLevel));
+  }
+  private findOpeningToken(ctx: any, char: string): IToken | undefined {
+    for (const key in ctx) {
+      const item = ctx[key][0];
+      if (item && item.image === char && item.startLine !== undefined) {
+        return item;
+      }
+    }
+    return undefined;
   }
 
   private printCommentsBefore(ctx: any) {
@@ -51,10 +61,9 @@ class CborFormatterVisitor extends BaseCborVisitor {
         c.startOffset >= this.lastTokenEndOffset && c.startOffset < startOffset,
     );
     relevantComments.forEach((c) => {
-      if (
-        this.output.length > 0 &&
-        !this.output[this.output.length - 1].endsWith("\n")
-      ) {
+      const lastChunk =
+        this.output.length > 0 ? this.output[this.output.length - 1] : "";
+      if (lastChunk && lastChunk.trim() !== "") {
         this.newline();
       }
       this.push(c.image);
@@ -71,6 +80,10 @@ class CborFormatterVisitor extends BaseCborVisitor {
           this.lastTokenEndOffset = Math.max(
             this.lastTokenEndOffset,
             lastItem.endOffset + 1,
+          );
+          this.lastPrintedLine = Math.max(
+            this.lastPrintedLine,
+            lastItem.endLine || lastItem.startLine || 0,
           );
         }
       }
@@ -108,11 +121,17 @@ class CborFormatterVisitor extends BaseCborVisitor {
   }
 
   map(ctx: any) {
-    const openBracket = ctx.LSquare?.[0];
+    const openBrace = this.findOpeningToken(ctx, "{");
     this.push("{");
-    if (openBracket) {
-      this.printTrailingComments(openBracket);
+    if (openBrace) {
+      this.lastPrintedLine = openBrace.startLine ?? 0;
+      this.lastTokenEndOffset =
+        (openBrace.endOffset || openBrace.startOffset) + 1;
+      this.printTrailingCommentsForCurrentLine();
     }
+
+    if (ctx.Spec) this.push(ctx.Spec[0].image);
+
     if (ctx.pair) {
       this.indentLevel++;
       this.newline();
@@ -120,8 +139,17 @@ class CborFormatterVisitor extends BaseCborVisitor {
         this.visit(p);
         if (i < ctx.pair.length - 1) {
           this.push(",");
-          this.newline();
+          const commaToken = ctx.Comma ? ctx.Comma[i] : undefined;
+          if (commaToken) {
+            this.lastPrintedLine = commaToken.startLine;
+            this.lastTokenEndOffset = Math.max(
+              this.lastTokenEndOffset,
+              (commaToken.endOffset || commaToken.startOffset) + 1,
+            );
+          }
         }
+        this.printTrailingCommentsForCurrentLine();
+        this.newline();
       });
       this.indentLevel--;
       this.newline();
@@ -138,23 +166,38 @@ class CborFormatterVisitor extends BaseCborVisitor {
   }
 
   array(ctx: any) {
-    const openBracket = ctx.LSquare?.[0];
+    const openBracket = this.findOpeningToken(ctx, "[");
     this.push("[");
     if (openBracket) {
-      this.printTrailingComments(openBracket);
+      this.lastPrintedLine = openBracket.startLine ?? 0;
+      this.lastTokenEndOffset =
+        (openBracket.endOffset || openBracket.startOffset) + 1;
+      this.printTrailingCommentsForCurrentLine();
     }
     if (ctx.Spec) this.push(ctx.Spec[0].image);
 
     if (ctx.value) {
       this.indentLevel++;
       this.newline();
+
       ctx.value.forEach((v: any, i: number) => {
         this.visit(v);
+
         if (i < ctx.value.length - 1) {
           this.push(",");
-          this.newline();
+          const commaToken = ctx.Comma ? ctx.Comma[i] : undefined;
+          if (commaToken) {
+            this.lastPrintedLine = commaToken.startLine;
+            this.lastTokenEndOffset = Math.max(
+              this.lastTokenEndOffset,
+              (commaToken.endOffset || commaToken.startOffset) + 1,
+            );
+          }
         }
+        this.printTrailingCommentsForCurrentLine();
+        this.newline();
       });
+
       this.indentLevel--;
       this.newline();
     }
@@ -230,18 +273,16 @@ class CborFormatterVisitor extends BaseCborVisitor {
     return this.output.join("");
   }
 
-  private printTrailingComments(token: IToken) {
-    if (!token) return;
-
+  private printTrailingCommentsForCurrentLine() {
     const trailing = this.comments.filter(
       (c) =>
-        c.startLine === token.startLine &&
-        c.startOffset > (token.endOffset ?? 0),
+        c.startLine === this.lastPrintedLine &&
+        c.startOffset >= this.lastTokenEndOffset,
     );
     trailing.forEach((c) => {
-      this.push(" ");
       this.push(c.image);
-      this.lastTokenEndOffset = c.endOffset || c.startOffset + c.image.length;
+      this.lastTokenEndOffset =
+        (c.endOffset || c.startOffset + c.image.length) + 1;
     });
   }
 }

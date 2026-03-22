@@ -251,6 +251,7 @@ export class CborParser extends CstParser {
     super(allTokens, {
       recoveryEnabled: true,
       errorMessageProvider: ErrorProvider,
+      nodeLocationTracking: "full",
     });
 
     this.cbor = this.RULE("cbor", () => {
