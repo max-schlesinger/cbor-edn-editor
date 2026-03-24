@@ -1,3 +1,11 @@
+/**
+ * Generates an interactive, HTML-formatted hex view of CBOR binary data.
+ * * This function parses the raw CBOR buffer byte by byte and generates a visual representation
+ * similar to `cbor.me`. It maintains a logical path (e.g., `root.m[0].k`) for each byte sequence
+ * using a stack, which allows the frontend to bind the hex view to a parsed EDN text editor.
+ * * @param buffer - The raw CBOR binary data to format.
+ * @returns A string containing HTML `<div>` elements representing the formatted hex view.
+ */
 export function generateCborMeHexView(buffer: Uint8Array): string {
   const data = new DataView(
     buffer.buffer,
@@ -15,10 +23,20 @@ export function generateCborMeHexView(buffer: Uint8Array): string {
     isKey?: boolean;
   }[] = [];
 
+  /**
+   * Converts a Uint8Array into an uppercase hex string.
+   */
   function toHex(arr: Uint8Array) {
     return Buffer.from(arr).toString("hex").toUpperCase();
   }
 
+  /**
+   * Appends a new formatted HTML line to the output array.
+   * * @param hexStr - The hex representation of the parsed bytes.
+   * @param comment - The meaning of the bytes.
+   * @param currentIndent - The visual indentation level for this line.
+   * @param path - The logical data path used for UI highlighting.
+   */
   function addLine(
     hexStr: string,
     comment: string,
@@ -55,12 +73,13 @@ export function generateCborMeHexView(buffer: Uint8Array): string {
 
     const startOffset = offset;
     const initialByte = buffer[offset++];
-    const majorType = initialByte >> 5;
-    const addInfo = initialByte & 0x1f;
+    const majorType = initialByte >> 5; // first 3 bits indicate the major type
+    const addInfo = initialByte & 0x1f; // last 5 bits indicate additional info or value
 
     let arg: number | bigint = addInfo;
     let byteCount = 0;
 
+    // Determine the argument value and how many additional bytes to read based on the additional info
     if (addInfo === 24) {
       arg = buffer[offset];
       byteCount = 1;
@@ -124,6 +143,7 @@ export function generateCborMeHexView(buffer: Uint8Array): string {
 
     addLine(hexStr, meaning, indent, currentPath);
 
+    // For byte/string types, also display the payload in hex and its meaning
     if ((majorType === 2 || majorType === 3) && addInfo !== 31) {
       const payloadLen = Number(arg);
       const payloadBytes = buffer.subarray(offset, offset + payloadLen);

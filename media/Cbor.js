@@ -51,29 +51,29 @@
     monaco.languages.setMonarchTokensProvider("cbor-edn", {
       tokenizer: {
         root: [
-          // Byte-Strings: h'...'
+          // Byte-Strings
           [/h'([0-9a-fA-F\s]*)'/, "string.bytes"],
 
-          // Tags: Zahl gefolgt von Klammer auf, z.B. 32(
+          // Tags
           [/(\d+)(\()/, ["keyword.tag", "delimiter.parenthesis"]],
 
           // Strings
-          [/"([^"\\]|\\.)*$/, "string.invalid"], // nicht geschlossener String
+          [/"([^"\\]|\\.)*$/, "string.invalid"],
           [/"([^"\\]|\\.)*"/, "string"],
 
-          // Zahlen
+          // Numbers
           [/-?\d+(\.\d+)?(_\d+)?/, "number"],
 
-          // Keywords / Booleans
+          // Keywords/Booleans
           [/\b(true|false|null|undefined)\b/, "keyword"],
 
-          // Klammern/Trennzeichen
+          // Brackets and Delimiters
           [/[{}]/, "delimiter.bracket"],
           [/[\[\]]/, "delimiter.array"],
           [/[,]/, "delimiter.comma"],
           [/[:]/, "delimiter.colon"],
 
-          // Kommentare
+          // Comments
           [/#.*$/, "comment"],
           [/\//, "comment", "@comment"],
         ],
