@@ -149,7 +149,9 @@ class CborFormatterVisitor extends BaseCborVisitor {
           }
         }
         this.printTrailingCommentsForCurrentLine();
-        this.newline();
+        if (i < ctx.pair.length - 1) {
+          this.newline();
+        }
       });
       this.indentLevel--;
       this.newline();
@@ -195,7 +197,9 @@ class CborFormatterVisitor extends BaseCborVisitor {
           }
         }
         this.printTrailingCommentsForCurrentLine();
-        this.newline();
+        if (i < ctx.value.length - 1) {
+          this.newline();
+        }
       });
 
       this.indentLevel--;
