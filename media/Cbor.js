@@ -409,35 +409,42 @@
           .querySelectorAll(`[data-path="${path}"]`)
           .forEach((el) => el.classList.add("highlighted"));
 
-        if (editor) {
-          if (currentPathMap[path]) {
-            const loc = currentPathMap[path];
+        let newDecorations = [];
 
-            currentDecorations = editor.deltaDecorations(currentDecorations, [
-              {
-                range: new monaco.Range(
-                  loc.startLine,
-                  loc.startCol,
-                  loc.endLine,
-                  loc.endCol,
-                ),
-                options: { inlineClassName: "monaco-highlight" },
-              },
-            ]);
-            editor.revealRangeInCenter(
-              new monaco.Range(
+        if (editor && currentPathMap[path]) {
+          const loc = currentPathMap[path];
+          newDecorations = [
+            {
+              range: new monaco.Range(
                 loc.startLine,
                 loc.startCol,
                 loc.endLine,
                 loc.endCol,
               ),
-            );
-          }
+              options: { inlineClassName: "monaco-highlight" },
+            },
+          ];
+          editor.revealRangeInCenter(
+            new monaco.Range(
+              loc.startLine,
+              loc.startCol,
+              loc.endLine,
+              loc.endCol,
+            ),
+          );
+        }
+        if (editor) {
+          currentDecorations = editor.deltaDecorations(
+            currentDecorations,
+            newDecorations,
+          );
         }
       }
     });
 
     editor.onDidChangeCursorPosition((e) => {
+      currentDecorations = editor.deltaDecorations(currentDecorations, []);
+
       const line = e.position.lineNumber;
       const col = e.position.column;
 
@@ -453,15 +460,14 @@
         }
       }
 
-      if (foundPath) {
-        document
-          .querySelectorAll(".highlighted")
-          .forEach((el) => el.classList.remove("highlighted"));
+      document
+        .querySelectorAll(".highlighted")
+        .forEach((el) => el.classList.remove("highlighted"));
 
+      if (foundPath) {
         const targetDivs = document.querySelectorAll(
           `[data-path="${foundPath}"]`,
         );
-
         targetDivs.forEach((el) => el.classList.add("highlighted"));
       }
     });

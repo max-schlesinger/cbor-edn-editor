@@ -25,6 +25,21 @@ class CborFormatterVisitor extends BaseCborVisitor {
     this.push("\n");
     this.push("  ".repeat(this.indentLevel));
   }
+
+  private getCurrentLineLength(): number {
+    let length = 0;
+    for (let i = this.output.length - 1; i >= 0; i--) {
+      const chunk = this.output[i];
+      const lastNewline = chunk.lastIndexOf("\n");
+      if (lastNewline !== -1) {
+        length += chunk.length - lastNewline - 1;
+        break;
+      }
+      length += chunk.length;
+    }
+    return length;
+  }
+
   private findOpeningToken(ctx: any, char: string): IToken | undefined {
     for (const key in ctx) {
       const item = ctx[key][0];
@@ -63,8 +78,14 @@ class CborFormatterVisitor extends BaseCborVisitor {
     relevantComments.forEach((c) => {
       const lastChunk =
         this.output.length > 0 ? this.output[this.output.length - 1] : "";
-      if (lastChunk && lastChunk.trim() !== "") {
-        this.newline();
+      const targetLen = (c.startColumn || 1) - 1;
+      if (lastChunk.trim() !== "") {
+        this.push("\n");
+        this.push(" ".repeat(Math.max(0, targetLen)));
+      } else {
+        this.output[this.output.length - 1] = " ".repeat(
+          Math.max(0, targetLen),
+        );
       }
       this.push(c.image);
       this.newline();
@@ -284,6 +305,10 @@ class CborFormatterVisitor extends BaseCborVisitor {
         c.startOffset >= this.lastTokenEndOffset,
     );
     trailing.forEach((c) => {
+      const currentLen = this.getCurrentLineLength();
+      const targetLen = (c.startColumn || 1) - 1;
+      const padding = Math.max(1, targetLen - currentLen);
+      this.push(" ".repeat(padding));
       this.push(c.image);
       this.lastTokenEndOffset =
         (c.endOffset || c.startOffset + c.image.length) + 1;

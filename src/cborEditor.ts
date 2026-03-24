@@ -500,12 +500,27 @@ export class CborEditorProvider
           const isEdnFile = document.uri.fsPath.toLowerCase().endsWith(".edn");
 
           if (isEdnFile) {
-            const textContent = new TextDecoder().decode(document.documentData);
+            let textContent = new TextDecoder().decode(document.documentData);
+
+            try {
+              const initialParse = parseCborEdn(textContent);
+              if (
+                initialParse.lexErrors.length === 0 &&
+                initialParse.parseErrors.length === 0
+              ) {
+                textContent = formatCborEdn(
+                  initialParse.cst,
+                  initialParse.comments,
+                );
+              }
+            } catch (e) {
+              console.error(e);
+            }
+
             this.postMessage(webviewPanel, "init", {
               value: textContent,
               editable,
             });
-
             try {
               const result = parseCborEdn(textContent);
               if (
@@ -527,8 +542,8 @@ export class CborEditorProvider
                     text: hexString,
                     pathMap: result.pathMap,
                   });
-                } catch (wasmErr) {
-                  console.error(wasmErr);
+                } catch (e) {
+                  console.error(e);
                 }
               }
             } catch (err) {
@@ -540,14 +555,27 @@ export class CborEditorProvider
                 "Note: You are editing a binary CBOR file. Any comments you add to this EDN view will be lost when saving.",
               );
               const text = diagnose(document.documentData);
-              const formattedText = this.prettyPrintEDN(text);
+              let formattedText = text;
+              const initialParse = parseCborEdn(text);
+              if (
+                initialParse.lexErrors.length === 0 &&
+                initialParse.parseErrors.length === 0
+              ) {
+                try {
+                  formattedText = formatCborEdn(
+                    initialParse.cst,
+                    initialParse.comments,
+                  );
+                } catch (e) {
+                  console.error(e);
+                }
+              }
 
               this.postMessage(webviewPanel, "init", {
                 value: formattedText,
                 editable,
               });
               const result = parseCborEdn(formattedText);
-
               try {
                 const hexString = generateCborMeHexView(document.documentData);
                 this.postMessage(webviewPanel, "updateHex", {
@@ -765,56 +793,6 @@ export class CborEditorProvider
         console.error(e);
       }
     }
-  }
-  private prettyPrintEDN(text: string): string {
-    const output: string[] = [];
-    let indentLevel = 0;
-    const indent = "  ";
-    let inString = false;
-
-    for (let i = 0; i < text.length; i++) {
-      const char = text[i];
-
-      if ((char === '"' || char === "'") && text[i - 1] !== "\\") {
-        inString = !inString;
-      }
-
-      if (inString) {
-        output.push(char);
-        continue;
-      }
-
-      switch (char) {
-        case "{":
-        case "[":
-          indentLevel++;
-          output.push(char + "\n" + indent.repeat(indentLevel));
-          break;
-
-        case "}":
-        case "]":
-          indentLevel = Math.max(0, indentLevel - 1);
-          output.push("\n" + indent.repeat(indentLevel) + char);
-          break;
-
-        case ",":
-          output.push(char + "\n" + indent.repeat(indentLevel));
-          if (text[i + 1] === " ") i++;
-          break;
-
-        case ":":
-          output.push(": ");
-          break;
-
-        default:
-          if (char !== "\n" && char !== "\r") {
-            output.push(char);
-          }
-          break;
-      }
-    }
-
-    return output.join("").trim();
   }
   //#endregion
 
