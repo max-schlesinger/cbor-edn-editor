@@ -367,6 +367,26 @@ export class CborEditorProvider
         },
       ),
     );
+    this._context.subscriptions.push(
+      vscode.commands.registerCommand(
+        "cbor-edn-editor.toggleHighlighting",
+        async () => {
+          const activeTab = vscode.window.tabGroups.activeTabGroup.activeTab;
+          if (
+            !activeTab ||
+            !(activeTab.input instanceof vscode.TabInputCustom)
+          ) {
+            return;
+          }
+          const uri = activeTab.input.uri;
+          const panels = Array.from(this.webviews.get(uri));
+          if (!panels.length) return;
+          for (const panel of panels) {
+            this.postMessage(panel, "toggleHighlighting", {});
+          }
+        },
+      ),
+    );
   }
 
   public static register(context: vscode.ExtensionContext): vscode.Disposable {

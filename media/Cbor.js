@@ -1,6 +1,5 @@
 (function () {
   const vscode = acquireVsCodeApi();
-  console.log("Cbor.js: initializing Monaco...");
 
   // @ts-ignore
   require.config({
@@ -155,7 +154,7 @@
         };
       },
     });
-
+    let isHighlightingEnabled = true;
     let formatRequestId = 0;
     const formatPending = new Map();
 
@@ -394,10 +393,27 @@
             targetDivs.forEach((div) => div.classList.add("highlighted"));
           }
           break;
+        case "toggleHighlighting":
+          isHighlightingEnabled = !isHighlightingEnabled;
+
+          if (!isHighlightingEnabled) {
+            document
+              .querySelectorAll(".highlighted")
+              .forEach((el) => el.classList.remove("highlighted"));
+
+            if (editor) {
+              currentDecorations = editor.deltaDecorations(
+                currentDecorations,
+                [],
+              );
+            }
+          }
+          break;
       }
     });
 
     document.addEventListener("click", (event) => {
+      if (!isHighlightingEnabled) return;
       const hexLine = event.target.closest(".hex-line");
       if (hexLine) {
         const path = hexLine.getAttribute("data-path");
@@ -443,6 +459,7 @@
     });
 
     editor.onDidChangeCursorPosition((e) => {
+      if (!isHighlightingEnabled) return;
       currentDecorations = editor.deltaDecorations(currentDecorations, []);
 
       const line = e.position.lineNumber;

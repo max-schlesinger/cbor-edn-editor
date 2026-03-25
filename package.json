@@ -61,6 +61,11 @@
     ],
     "commands": [
       {
+        "command": "cbor-edn-editor.toggleHighlighting",
+        "title": "Toggle Hex/Text Sync",
+        "icon": "$(sync)"
+      },
+      {
         "command": "cbor-edn-editor.Cbor.new",
         "title": "Create new CBOR Document",
         "category": "CBOR"
@@ -103,6 +108,11 @@
         },
         {
           "command": "cbor-edn-editor.copyCborMeLink",
+          "group": "navigation",
+          "when": "activeCustomEditorId == 'cbor-edn-editor.cbor'"
+        },
+        {
+          "command": "cbor-edn-editor.toggleHighlighting",
           "group": "navigation",
           "when": "activeCustomEditorId == 'cbor-edn-editor.cbor'"
         }
