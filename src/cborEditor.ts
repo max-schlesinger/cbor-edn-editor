@@ -14,7 +14,6 @@ interface CborEdit {
 
 /**
  * A delegate interface used by the document to perform file system operations
- * (e.g., when saving or exporting).
  */
 interface CborDocumentDelegate {
   getFileData(destination: vscode.Uri): Promise<Uint8Array>;
@@ -117,7 +116,7 @@ class CborDocument extends Disposable implements vscode.CustomDocument {
   /**
    * Called when the user edits the document in the webview.
    * Notifies VS Code that the document is dirty.
-   * * @param newText The new EDN text from the editor.
+   * @param newText The new EDN text from the editor.
    */
   makeEdit(newText: string) {
     this._onDidChange.fire({
@@ -194,10 +193,10 @@ class CborDocument extends Disposable implements vscode.CustomDocument {
  * This provider links the VS Code Custom Editor API with a Monaco-based webview.
  * It allows viewing binary `.cbor` files as readable EDN, editing them,
  * and saving them back as binary CBOR.
- * * Main responsibilities include:
+ * Main responsibilities include:
  * - Parsing between CBOR (Binary) and EDN (Text).
  * - Providing the HTML/JS for the Monaco webview.
- * - Synchronizing changes, diagnostic errors (syntax), and hex views.
+ * - Synchronizing changes, diagnostic errors, and hex views.
  */
 export class CborEditorProvider
   implements vscode.CustomEditorProvider<CborDocument>
@@ -405,7 +404,6 @@ export class CborEditorProvider
   /**
    * Called by VS Code to open a new Custom Document.
    * Initializes the `CborDocument` and defines how the file is processed when saving
-   * (e.g., validating EDN syntax before converting and saving as CBOR).
    */
   async openCustomDocument(
     uri: vscode.Uri,

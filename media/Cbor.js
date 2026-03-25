@@ -1,3 +1,8 @@
+/**
+ * This script manages the Monaco Editor instance within a VS Code Webview.
+ * It provides syntax highlighting, hover providers for CBOR tags, formatting integration,
+ * and bidirectional synchronization between the EDN text and Hex view.
+ */
 (function () {
   const vscode = acquireVsCodeApi();
 
@@ -10,6 +15,9 @@
   require(["vs/editor/editor.main"], function () {
     monaco.languages.register({ id: "cbor-edn" });
 
+    /**
+     * Language configuration for brackets, comments, and auto-closing pairs.
+     */
     monaco.languages.setLanguageConfiguration("cbor-edn", {
       comments: {
         lineComment: "#",
@@ -47,6 +55,10 @@
       ],
     });
 
+    /**
+     * Define the Lexer/Tokenizer using Monarch.
+     * Maps regex patterns to theme tokens.
+     */
     monaco.languages.setMonarchTokensProvider("cbor-edn", {
       tokenizer: {
         root: [
@@ -83,6 +95,9 @@
       },
     });
 
+    /**
+     * Define the visual theme for the editor.
+     */
     monaco.editor.defineTheme("cbor-theme", {
       base: "vs-dark",
       inherit: true,
@@ -96,6 +111,9 @@
       colors: {},
     });
 
+    /**
+     * Mapping of standard CBOR tag IDs to their descriptive names for tooltips.
+     */
     const CBOR_TAGS = {
       0: "Standard Date/Time String (RFC 3339)",
       1: "Epoch-based Date/Time (Timestamp)",
@@ -114,6 +132,9 @@
       55799: "Self-Describe CBOR (Magic Number)",
     };
 
+    /**
+     * Provider for Quick Fixes/Code Actions.
+     */
     monaco.languages.registerCodeActionProvider("cbor-edn", {
       provideCodeActions: function (model, range, context) {
         const actions = [];
@@ -158,6 +179,9 @@
     let formatRequestId = 0;
     const formatPending = new Map();
 
+    /**
+     * Provider for document formatting. Sends a message to the VS Code backend.
+     */
     monaco.languages.registerDocumentFormattingEditProvider("cbor-edn", {
       provideDocumentFormattingEdits: function (model, options, token) {
         return new Promise((resolve) => {
@@ -171,6 +195,11 @@
         });
       },
     });
+
+    /**
+     * Provider for Hover tooltips.
+     * Displays CBOR Tag descriptions.
+     */
     monaco.languages.registerHoverProvider("cbor-edn", {
       provideHover: function (model, position) {
         const word = model.getWordAtPosition(position);
@@ -223,6 +252,10 @@
         };
       },
     });
+
+    /**
+     * Initialize the Monaco Editor instance.
+     */
     const editor = monaco.editor.create(
       document.getElementById("editor-part"),
       {
@@ -249,6 +282,10 @@
         },
       },
     );
+
+    /**
+     * Registers the command to apply quick fixes via editor edits.
+     */
     monaco.editor.registerCommand(
       "cbor.applyQuickFix",
       function (accessor, range, text) {
@@ -265,6 +302,10 @@
     setTimeout(() => {
       editor.focus();
     }, 100);
+
+    /**
+     * Custom Paste Handling: Uses the Clipboard API to insert text.
+     */
     editor.onKeyDown((e) => {
       if ((e.ctrlKey || e.metaKey) && e.keyCode === monaco.KeyCode.KeyV) {
         e.preventDefault();
@@ -291,6 +332,9 @@
 
     let isEditable = true;
 
+    /**
+     * Notify VS Code whenever the editor content changes.
+     */
     editor.onDidChangeModelContent(() => {
       if (!isEditable) return;
       const value = editor.getValue();
@@ -304,6 +348,9 @@
     let currentPathMap = {};
     let currentDecorations = [];
 
+    /**
+     * Global message listener for communication from the VS Code Extension.
+     */
     window.addEventListener("message", (event) => {
       const message = event.data;
       switch (message.type) {
@@ -412,6 +459,9 @@
       }
     });
 
+    /**
+     * Sync Click: Clicking on a Hex line highlights the corresponding EDN text and the other way around.
+     */
     document.addEventListener("click", (event) => {
       if (!isHighlightingEnabled) return;
       const hexLine = event.target.closest(".hex-line");
@@ -458,6 +508,9 @@
       }
     });
 
+    /**
+     * Sync Cursor: Moving the cursor in Monaco highlights the corresponding Hex data.
+     */
     editor.onDidChangeCursorPosition((e) => {
       if (!isHighlightingEnabled) return;
       currentDecorations = editor.deltaDecorations(currentDecorations, []);

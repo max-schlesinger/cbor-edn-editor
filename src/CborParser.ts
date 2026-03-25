@@ -9,6 +9,10 @@ import {
 import { Tag, Simple, encodedNumber } from "cbor2";
 import * as ipaddr from "ipaddr.js";
 
+/**
+ * Custom error message provider for the Parser.
+ * Provides user-friendly error messages and hints for common syntax mistakes.
+ */
 const ErrorProvider: IParserErrorMessageProvider = {
   buildMismatchTokenMessage: (options) => {
     const expected = options.expected.LABEL || options.expected.name;
@@ -43,6 +47,9 @@ const LexerErrorProvider: ILexerErrorMessageProvider = {
   },
 };
 
+/**
+ * Token definitions for the CBOR EDN grammar.
+ */
 const Comment = createToken({
   name: "Comment",
   pattern: /\/[^\/]*\/|#[^\r\n]*/,
@@ -211,6 +218,11 @@ const allTokens = [
   Unexpected,
 ];
 
+/**
+ * Parses a hex-float string into a JavaScript number.
+ * @param text - The raw hex-float string.
+ * @returns The calculated numeric value.
+ */
 function parseHexFloat(text: string): number {
   const clean = text.toLowerCase().replace(/_/g, "");
   const sign = clean.startsWith("-") ? -1 : 1;
@@ -229,10 +241,17 @@ function parseHexFloat(text: string): number {
   return sign * value * Math.pow(2, exponent);
 }
 
+/**
+ * The Lexer instance initialized with all CBOR EDN tokens.
+ */
 export const CborLexer = new Lexer(allTokens, {
   errorMessageProvider: LexerErrorProvider,
 });
 
+/**
+ * CstParser implementation for CBOR EDN.
+ * Defines the grammar rules using the Chevrotain Domain Specific Language.
+ */
 export class CborParser extends CstParser {
   public cbor!: () => any;
   public value!: () => any;
@@ -381,6 +400,10 @@ export class CborParser extends CstParser {
     this.performSelfAnalysis();
   }
 
+  /**
+   * Lookahead function to distinguish between a number and a CBOR tag.
+   * @returns True if the next tokens match the pattern of a tag.
+   */
   private looksLikeTag(): boolean {
     const t1 = this.LA(1);
     const isNum =
@@ -403,6 +426,9 @@ export class CborParser extends CstParser {
 
 export const parserInstance = new CborParser();
 
+/**
+ * Represents the result of the parsing process.
+ */
 export interface ParseResult {
   cst: any;
   lexErrors: any[];
@@ -417,6 +443,10 @@ export interface ParseResult {
 
 const BaseCborVisitor = parserInstance.getBaseCstVisitorConstructor();
 
+/**
+ * Visitor implementation that traverses the CST and produces
+ * JavaScript representation.
+ */
 export class CborVisitor extends BaseCborVisitor {
   public pathMap: Record<
     string,
@@ -429,6 +459,11 @@ export class CborVisitor extends BaseCborVisitor {
     this.validateVisitor();
   }
 
+  /**
+   * Records the source code location for a given CST node.
+   * Used for bidirectional synchronization between editor and hex view.
+   * @param ctx - The current CST context.
+   */
   private recordLocation(ctx: any) {
     let startLine = Infinity,
       startCol = Infinity;
@@ -694,6 +729,8 @@ export class CborVisitor extends BaseCborVisitor {
     if (ctx.embedded) return this.visit(ctx.embedded);
     return "";
   }
+
+  // AI generated code
   annotated_number(ctx: any) {
     let val: number | bigint | null = null;
     let isFloat = false;
@@ -816,6 +853,11 @@ export class CborVisitor extends BaseCborVisitor {
   }
 }
 
+/**
+ * The main entry point for parsing CBOR EDN text.
+ * @param text - The raw EDN string to parse.
+ * @returns A {@link ParseResult} object containing the value and metadata.
+ */
 export function parseCborEdn(text: string): ParseResult {
   const lexResult = CborLexer.tokenize(text);
   parserInstance.input = lexResult.tokens;

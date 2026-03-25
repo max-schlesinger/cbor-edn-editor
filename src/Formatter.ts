@@ -3,6 +3,12 @@ import { IToken } from "chevrotain";
 
 const BaseCborVisitor = parserInstance.getBaseCstVisitorConstructor();
 
+/**
+ * Visitor class responsible for formatting
+ * Concrete Syntax Tree into a prettified string.
+ * It handles indentation, line breaks, and the re-insertion of comments
+ * based on their original source positions.
+ */
 class CborFormatterVisitor extends BaseCborVisitor {
   private output: string[] = [];
   private indentLevel = 0;
@@ -11,21 +17,36 @@ class CborFormatterVisitor extends BaseCborVisitor {
   private lastTokenEndOffset = 0;
   private lastPrintedLine = 0;
 
+  /**
+   * Initializes a new instance of the formatter visitor.
+   * @param comments - An array of comment tokens extracted during lexing.
+   */
   constructor(comments: IToken[]) {
     super();
     this.comments = comments;
     this.validateVisitor();
   }
 
+  /**
+   * Appends a string to the output buffer.
+   * @param str - The string to append.
+   */
   private push(str: string) {
     this.output.push(str);
   }
 
+  /**
+   * Adds a newline and the appropriate amount of indentation to the output.
+   */
   private newline() {
     this.push("\n");
     this.push("  ".repeat(this.indentLevel));
   }
 
+  /**
+   * Calculates the length of the current line being constructed.
+   * @returns The number of characters on the current line.
+   */
   private getCurrentLineLength(): number {
     let length = 0;
     for (let i = this.output.length - 1; i >= 0; i--) {
@@ -40,6 +61,12 @@ class CborFormatterVisitor extends BaseCborVisitor {
     return length;
   }
 
+  /**
+   * Searches the context for a specific opening token.
+   * @param ctx - The current CST node context.
+   * @param char - The character image to look for.
+   * @returns The found token or undefined.
+   */
   private findOpeningToken(ctx: any, char: string): IToken | undefined {
     for (const key in ctx) {
       const item = ctx[key][0];
@@ -50,6 +77,10 @@ class CborFormatterVisitor extends BaseCborVisitor {
     return undefined;
   }
 
+  /**
+   * Identifies and prints comments that appear before the current CST node.
+   * @param ctx - The current CST node context.
+   */
   private printCommentsBefore(ctx: any) {
     let startOffset = Infinity;
 
@@ -93,6 +124,10 @@ class CborFormatterVisitor extends BaseCborVisitor {
     });
   }
 
+  /**
+   * Updates the global offset and line counters based on the tokens in the current context.
+   * @param ctx - The current CST node context.
+   */
   private updateLastOffset(ctx: any) {
     for (const key in ctx) {
       if (Array.isArray(ctx[key])) {
@@ -298,6 +333,9 @@ class CborFormatterVisitor extends BaseCborVisitor {
     return this.output.join("");
   }
 
+  /**
+   * Prints comments that exist on the same line as the last printed token
+   */
   private printTrailingCommentsForCurrentLine() {
     const trailing = this.comments.filter(
       (c) =>
@@ -316,6 +354,12 @@ class CborFormatterVisitor extends BaseCborVisitor {
   }
 }
 
+/**
+ * Main entry point for formatting CBOR EDN.
+ * @param cst - The Concrete Syntax Tree produced by the parser.
+ * @param comments - Optional array of comment tokens to include in the output.
+ * @returns The formatted and prettified EDN string.
+ */
 export function formatCborEdn(cst: any, comments: IToken[] = []): string {
   const visitor = new CborFormatterVisitor(comments);
   visitor.visit(cst);

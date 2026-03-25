@@ -1,9 +1,9 @@
 /**
  * Generates an interactive, HTML-formatted hex view of CBOR binary data.
- * * This function parses the raw CBOR buffer byte by byte and generates a visual representation
+ * This function parses the raw CBOR buffer byte by byte and generates a visual representation
  * similar to `cbor.me`. It maintains a logical path (e.g., `root.m[0].k`) for each byte sequence
  * using a stack, which allows the frontend to bind the hex view to a parsed EDN text editor.
- * * @param buffer - The raw CBOR binary data to format.
+ * @param buffer - The raw CBOR binary data to format.
  * @returns A string containing HTML `<div>` elements representing the formatted hex view.
  */
 export function generateCborMeHexView(buffer: Uint8Array): string {
@@ -32,7 +32,7 @@ export function generateCborMeHexView(buffer: Uint8Array): string {
 
   /**
    * Appends a new formatted HTML line to the output array.
-   * * @param hexStr - The hex representation of the parsed bytes.
+   * @param hexStr - The hex representation of the parsed bytes.
    * @param comment - The meaning of the bytes.
    * @param currentIndent - The visual indentation level for this line.
    * @param path - The logical data path used for UI highlighting.
