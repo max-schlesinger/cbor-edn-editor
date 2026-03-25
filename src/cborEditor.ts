@@ -466,7 +466,10 @@ export class CborEditorProvider
         }
       }),
     );
-    document.onDidDispose(() => disposeAll(listeners));
+    document.onDidDispose(() => {
+      this.diagnostics.delete(document.uri);
+      disposeAll(listeners);
+    });
     return document;
   }
 
@@ -912,9 +915,7 @@ export class CborEditorProvider
             console.error(e);
           }
         }
-        const panels = Array.from(this.webviews.get(document.uri));
-        if (panels.length > 0) {
-          const panel = panels[0];
+        for (const panel of this.webviews.get(document.uri)) {
           this.postMessage(panel, "formatResponse", {
             requestId: message.requestId,
             body: formatted,

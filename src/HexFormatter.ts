@@ -90,7 +90,7 @@ export function generateCborMeHexView(buffer: Uint8Array): string {
       arg = data.getUint32(offset);
       byteCount = 4;
     } else if (addInfo === 27) {
-      arg = Number(data.getBigUint64(offset));
+      arg = data.getBigUint64(offset);
       byteCount = 8;
     }
 
@@ -131,7 +131,8 @@ export function generateCborMeHexView(buffer: Uint8Array): string {
         else if (addInfo === 21) meaning = "primitive(true)";
         else if (addInfo === 22) meaning = "primitive(null)";
         else if (addInfo === 23) meaning = "primitive(undefined)";
-        else if (addInfo === 25) meaning = "float16";
+        else if (addInfo === 25)
+          meaning = "float16"; // not supported natively
         else if (addInfo === 26)
           meaning = `primitive(${data.getFloat32(startOffset + 1)})`;
         else if (addInfo === 27)

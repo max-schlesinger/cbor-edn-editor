@@ -469,6 +469,9 @@
           `[data-path="${foundPath}"]`,
         );
         targetDivs.forEach((el) => el.classList.add("highlighted"));
+        if (targetDivs.length > 0) {
+          targetDivs[0].scrollIntoView({ behavior: "smooth", block: "center" });
+        }
       }
     });
 
