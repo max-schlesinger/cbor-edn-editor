@@ -3,7 +3,7 @@
   "icon": "docs/icon1.jpg",
   "displayName": "CBOR EDN Editor",
   "description": "An extension that converts CBOR files into EDN, making them readable and editable.",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "publisher": "max-schlesinger",
   "private": false,
   "license": "MIT",
