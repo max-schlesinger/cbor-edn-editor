@@ -1,3 +1,20 @@
+/**
+ * How to Extend the Parser
+ * To add support for new CBOR features (e.g., new tags or annotations),
+ * follow these three steps:
+ * 1. Define the Token (Lexer):
+ * - Create a new token using `createToken({ name: "...", pattern: /.../ })`.
+ * - Add it to the `allTokens` array. (Order matters!)
+ * * 2. Define the Grammar Rule (Parser):
+ * - Declare the rule as a public property in the `CborParser` class.
+ * - Initialize the rule in the constructor using `this.RULE("ruleName", () => { ... })`.
+ * - Integrate the new rule into the `value` rule or other existing structures using `this.SUBRULE`.
+ * * 3. implement the visitor logic (Visitor):
+ * - Add a method with the same name as your rule to the `CborVisitor` class.
+ * - This method receives a `ctx` (context) object containing the matched tokens/sub-rules.
+ * - Return the JavaScript representation of the data based on the context. You can use `this.visit(ctx.subRule)`
+ *   to recursively process child nodes.
+ */
 import {
   createToken,
   Lexer,

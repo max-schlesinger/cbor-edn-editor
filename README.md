@@ -1,15 +1,11 @@
-# CBOR EDN Editor (Preview 2)
-
-> **NOTE: This is a Pre-Release.**
-> Features may change, and bugs might occur.
-> Please report any issues in the [Issues](https://github.com/max-schlesinger/cbor-edn-editor/issues) section.
+# CBOR EDN Editor
 
 **CBOR EDN Editor** allows you to open, view, and edit binary CBOR files as human-readable **Extended Diagnostic Notation (EDN)** directly in VS Code.
 
 ![Open CBOR File](./docs/open.gif)
 _Open `.cbor` files instantly in a split-view editor._
 
-## Features
+## Core Features
 
 ### Live Side-by-Side Hex Editing
 
@@ -32,6 +28,13 @@ Powered by a custom parser, the editor catches syntax errors instantly, underlin
   <img src="./docs/exportAsEdn.gif" alt="Export to EDN" width="49%" />
   <img src="./docs/exportAsCbor.gif" alt="Export to CBOR" width="49%" />
 </p>
+
+## Advanced Capabilities
+
+- Smart Formatting
+- Cross-selection highlighting between EDN and binary bytes
+- One-click data export for sharing via cbor.me
+- Hover support for Lexer/Parser Errors and tags
 
 ## Known Issues / Limitations
 
