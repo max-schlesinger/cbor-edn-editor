@@ -5,6 +5,7 @@ import { parseCborEdn } from "./CborParser";
 import { diagnose, encode } from "cbor2";
 import { formatCborEdn } from "./Formatter";
 import { generateCborMeHexView } from "./HexFormatter";
+//-----format on save-----
 /**
  * Represents a text change made in the EDN webview (Monaco Editor)
  */
@@ -206,8 +207,14 @@ export class CborEditorProvider
 
   private readonly webviews = new WebviewCollection();
   private readonly diagnostics: vscode.DiagnosticCollection;
+  private statusBarItem: vscode.StatusBarItem;
 
   constructor(private readonly _context: vscode.ExtensionContext) {
+    this.statusBarItem = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Right,
+      100,
+    );
+    this._context.subscriptions.push(this.statusBarItem);
     this.diagnostics = vscode.languages.createDiagnosticCollection("cbor-edn");
     this._context.subscriptions.push(this.diagnostics);
     this._context.subscriptions.push(
@@ -388,6 +395,20 @@ export class CborEditorProvider
     );
   }
 
+  private formatBytes(bytes: number): string {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  }
+
+  private updateSizeInfo(uri: vscode.Uri, bytes: Uint8Array) {
+    const activeEditor = vscode.window.activeTextEditor;
+    const sizeStr = this.formatBytes(bytes.length);
+    this.statusBarItem.text = `$(database) CBOR: ${sizeStr} (${bytes.length} bytes)`;
+    this.statusBarItem.show();
+  }
   public static register(context: vscode.ExtensionContext): vscode.Disposable {
     return vscode.window.registerCustomEditorProvider(
       CborEditorProvider.viewType,
@@ -804,6 +825,7 @@ export class CborEditorProvider
 
         const buffer = encode(valueToEncode);
         const hexString = generateCborMeHexView(buffer);
+        this.updateSizeInfo(uri, buffer);
         for (const panel of this.webviews.get(uri)) {
           this.postMessage(panel, "updateHex", {
             text: hexString,
